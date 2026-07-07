@@ -1,0 +1,52 @@
+# Session calendar. All times US Eastern. Source: AGENTS.md session calendar section.
+# Forex: Sunday 17:00 ET through Friday 17:00 ET, four regional sessions.
+# Futures: CME Globex, ~23h/day, daily maintenance break 17:00-18:00 ET,
+# weekly close Friday 17:00 ET, reopen Sunday 18:00 ET.
+# daily_reset_et 17:00 across every instrument in version one.
+
+_forex_sessions: &forex_sessions
+  sessions:
+    - name: sydney
+      start_et: "17:00"
+      end_et: "02:00"
+    - name: tokyo
+      start_et: "19:00"
+      end_et: "04:00"
+    - name: london
+      start_et: "03:00"
+      end_et: "12:00"
+    - name: new_york
+      start_et: "08:00"
+      end_et: "17:00"
+  daily_reset_et: "17:00"
+  weekend_close_et: "17:00"
+  weekend_close_day: friday
+  weekend_open_et: "17:00"
+  weekend_open_day: sunday
+
+_futures_sessions: &futures_sessions
+  sessions:
+    - name: globex
+      start_et: "18:00"
+      end_et: "17:00"
+  daily_reset_et: "17:00"
+  weekend_close_et: "17:00"
+  weekend_close_day: friday
+  weekend_open_et: "18:00"
+  weekend_open_day: sunday
+
+EUR_USD: *forex_sessions
+USD_JPY: *forex_sessions
+GBP_USD: *forex_sessions
+USD_CHF: *forex_sessions
+AUD_USD: *forex_sessions
+USD_CAD: *forex_sessions
+NZD_USD: *forex_sessions
+
+ES: *futures_sessions
+NQ: *futures_sessions
+YM: *futures_sessions
+CL: *futures_sessions
+GC: *futures_sessions
+ZN: *futures_sessions
+6E: *futures_sessions

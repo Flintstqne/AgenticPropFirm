@@ -1,0 +1,161 @@
+PROP FIRM SIMULATION DASHBOARD
+Visual Design Document
+
+1. DESIGN BRIEF AND DIRECTION
+
+The dashboard shows a running trading simulation. Agents open accounts, place trades against forex and futures data, and get judged against profit targets, drawdown limits, and daily loss caps in real time. The person watching this screen wants one thing above every other thing: a fast read on which accounts stand safe, which stand near a breach, and which already failed.
+
+The design takes its cues from a real trading terminal rather than a typical software dashboard. Sharp corners, hairline dividers, monospace figures, flat panels separated by tone rather than shadow. No rounded corners anywhere in the interface. No purple. No soft shadow blur. The screen reads like an instrument panel built for someone who checks it forty times a day, not a marketing page built to impress on first look.
+
+2. COLOR SYSTEM
+
+Base and structure:
+Page background: #0B0D10, a near black with a cold undertone rather than pure black.
+Panel background: #15181D, one step brighter than the page, the only device used to separate a panel from the page behind it.
+Hairline border: #272C33, a 1 pixel line, the sole divider between regions. No panel gets a shadow. Every panel gets a border.
+Primary text: #ECEEF0.
+Secondary text: #8A93A1, used for labels, timestamps, and captions.
+
+Semantic accents, each tied to a real state in the simulation rather than picked for decoration:
+Profit and pass: #35B075, a muted institutional green rather than a neon acid tone.
+Loss and fail: #D64545, a brick red rather than a warning siren red.
+Warning and near breach: #D4972B, an amber that sits between the green and red states, used when an account crosses 70 percent of a daily loss or drawdown limit.
+Interactive and brand accent: #3E7CFF, a cold signal blue used for buttons, links, the current time marker, and anything the person clicks. This color never appears on a chart line or a data value, since a data value already carries green, red, or neutral meaning. The blue stays reserved for controls and navigation, so a glance at any color on screen tells the person whether they are looking at a result or an action.
+
+This gives the palette seven colors total, four structural and three semantic plus one interactive accent. No gradient appears anywhere in the interface. Every fill stays a flat, single value.
+
+3. TYPOGRAPHY SYSTEM
+
+Three type roles, one considered family group rather than three unrelated fonts:
+
+Display and section headers: Space Grotesk. A geometric grotesk with a technical, slightly mechanical character, used at larger sizes for screen titles and account names. Weight 500 for section titles, weight 600 reserved for the single most important number on a given screen, such as an account's current equity.
+
+Body and interface labels: IBM Plex Sans. Used for every label, button, menu item, and paragraph of explanatory text. Weight 400 for body text, weight 500 for labels and buttons.
+
+Data and numeric values: IBM Plex Mono. Used for every number on the screen, balance, equity, price, drawdown percentage, trade size, timestamps. A monospace face keeps digits aligned column to column in a table, and keeps a number from shifting width as it updates in real time, which matters once numbers tick during a live simulation.
+
+Type scale:
+Eyebrow and caption: 11px, IBM Plex Sans, weight 500, uppercase, letter spacing 0.08em, color secondary text.
+Body: 14px, IBM Plex Sans, weight 400, line height 1.5.
+Table and data value: 14px, IBM Plex Mono, tabular figures, right aligned in every numeric column.
+Section header: 20px, Space Grotesk, weight 500.
+Screen title: 28px, Space Grotesk, weight 500.
+Hero figure, such as an account's live equity number on its own detail screen: 40px, Space Grotesk, weight 600, tabular figures inherited from the mono scale for the digits themselves.
+
+4. LAYOUT AND GRID
+
+Twelve column grid, 24px gutter, 32px outer margin on desktop. Every panel snaps to whole column widths. No panel floats free of the grid.
+
+Elevation comes from background tone alone. A panel sits on the page through its 1px border and its slightly brighter fill, never through a shadow. This keeps the whole screen reading flat and precise rather than soft, matching the direction of an instrument panel rather than a consumer app.
+
+Every screen shares one persistent structure:
+A session rail across the very top, full width, 56px tall. Described fully in section 5.
+A left rail, 280px wide, listing every account and agent as a dense, monospace ticker style list.
+A main content area filling the remaining width, changing based on what the person selected in the left rail.
+An alert strip along the bottom, 40px tall, showing the three most recent rule checks or breaches as a scrolling log line, so a breach never hides behind a screen the person forgot to check.
+
+5. SIGNATURE ELEMENT, THE SESSION RAIL
+
+The one element built to be memorable and specific to this product, rather than borrowed from a template dashboard.
+
+A horizontal strip across the top of every screen represents one full trading day, Sydney through Tokyo through London through New York, mapped left to right against the 24 hour clock. Four segments sit side by side, each labeled with its session name in the caption type style. Segments brighten where two sessions overlap, since overlap hours carry the deepest liquidity and the tightest spread in the actual simulation, so the rail communicates real market condition information rather than existing as pure decoration.
+
+A thin vertical marker in the interactive accent blue sweeps left to right across the rail as simulated time advances, showing exactly where the current moment sits inside the trading day. Hovering any point on the rail shows the exact session state and expected spread condition for that moment, pulled directly from the session calendar config built earlier in this project.
+
+This rail does double duty. It gives the dashboard a visual identity nobody else's trading tool shares, and it answers a real question the person needs answered constantly during a live run: what kind of market condition are my agents trading in right now.
+
+6. SCREEN BY SCREEN BREAKDOWN
+
+6.1 Overview Screen
+
+The default screen on load. Shows every account at once as a dense grid of compact panels, one panel per account, arranged four across on desktop.
+
+Each account panel shows:
+Agent name and framework type (reinforcement learning or LLM) in the caption style, top left.
+Current phase (challenge, verification, funded) as a small rectangular tag with a colored left edge bar rather than a rounded pill, since no element in this interface carries a rounded corner.
+Equity value in the hero mono style, large and immediate.
+A thin horizontal bar beneath the equity value showing drawdown used against the account's limit, filling from left to right, shifting from green through amber through red as the account approaches its limit.
+A tiny sparkline of the last hour of equity, drawn as a single 1px line with no fill, no gradient, no glow.
+
+ASCII layout of one panel:
+
++--------------------------------------+
+| AGENT 07 . REINFORCEMENT LEARNING    |
+| [FUNDED]                             |
+|                                       |
+| 24,180.55                            |
+| ______________________________       |
+| DRAWDOWN  62% OF LIMIT                |
+| [||||||||||||||||............]       |
+|                                       |
+|        /\  /\_/\                     |
+|   _/\_/  \/     \___/\               |
++--------------------------------------+
+
+6.2 Account Detail Screen
+
+Selecting one account from the left rail opens this screen. Full width main area splits into three stacked regions:
+
+Top: a full width equity curve, drawn as a single line, sharp axis lines, monospace axis labels, a horizontal dashed reference line marking the profit target and another marking the drawdown floor, so the two boundaries the account lives between stay visible at all times.
+
+Middle: a row of four data blocks, each a bordered panel with no shadow, showing balance, equity, daily loss used against limit, and days completed against the minimum requirement. Each block uses the hero mono style at a reduced size, 28px rather than 40px.
+
+Bottom: a table of open positions, columns for instrument, side, size, entry price, current price, and unrealized profit and loss, every numeric column right aligned in Plex Mono with tabular figures so the decimal points line up down the column.
+
+6.3 Trade Ledger Screen
+
+A single dense table listing every closed trade across every account, filterable by agent, instrument, and date range through a row of flat, sharp cornered dropdown controls at the top. Rows carry no zebra striping, since alternating row color reads as a generic table default rather than an intentional choice. Instead, a 1px hairline separates every row, and the row under the cursor gets a subtle background lift to the panel tone plus a left edge bar in the interactive blue.
+
+6.4 Leaderboard Screen
+
+Ranks every agent by the Sortino ratio defined earlier in this project, breaking ties by maximum drawdown. Presented as a table rather than a chart, since a ranked list of exact numbers serves this use better than a visual chart would. The agent in first position gets no badge, no crown icon, no rounded medal graphic. The rank number itself, set in the hero mono style, carries the weight.
+
+6.5 Alert and Rule Violation Log
+
+A dedicated screen listing every rule check that produced a warning or a failure, newest first. Each row states the account, the rule name, the exact value that triggered the check, and the limit it crossed, written in plain, direct language rather than a generic error code. A failure reads as a full sentence: Account 07 exceeded the daily loss limit at 5.1 percent against a 5.0 percent cap.
+
+7. COMPONENT LIBRARY
+
+Buttons: flat fill or flat outline, sharp corners, 1px border, label set in Plex Sans weight 500, uppercase, letter spacing 0.04em. Primary buttons fill with the interactive blue. Secondary buttons show a blue border on a transparent fill. Hover state brightens the fill or border by one step, no shadow, no scale transform.
+
+Status tags: a small sharp cornered rectangle, background at panel tone, a 3px colored left edge bar carrying the semantic color, label text in caption style. Used for phase state, connection mode, and framework type.
+
+Tables: hairline row dividers, right aligned numeric columns in Plex Mono with tabular figures, left aligned text columns in Plex Sans. Column headers in caption style, uppercase, secondary text color, with a 2px bottom border in the interactive blue marking the currently sorted column.
+
+Charts: single line, 1px or 1.5px stroke weight, no area fill, no gradient, no glow. Axis lines at 1px in the hairline border color. Reference lines (profit target, drawdown floor) drawn dashed in secondary text color. Data updates redraw the line directly, no animated draw in effect on every tick, since constant motion across a screen showing many accounts at once reads as noisy rather than sleek.
+
+Gauges: a horizontal bar rather than a circular dial, since a circular gauge reads as a decorative default borrowed from consumer fitness apps rather than a trading tool. The bar fills left to right, colored by proximity to the limit it measures.
+
+8. MOTION AND INTERACTION
+
+Motion stays restrained and purposeful. Three moments carry animation, nothing else:
+
+The session rail time marker sweeps continuously, since this motion carries real information about simulated time passing.
+
+A number that changes value counts from the old figure to the new figure over 200 milliseconds rather than snapping instantly, so the eye catches an update without needing a highlight flash.
+
+A breach event flashes the affected account panel's border in the fail red for one second, then settles to a steady red border, so the eye catches the moment a failure happens even across a sixteen panel overview screen.
+
+Every other element in the interface stays still. No hover lift, no scale transform, no page transition slide. Reduced motion preference in the browser turns off the counting animation and the flash, replacing both with an instant state change.
+
+9. INTERFACE STATES
+
+Empty state: an account with no trades yet shows the phrase No trades placed yet in secondary text color, centered in the space the equity curve would otherwise fill, rather than an empty chart with no context.
+
+Loading state: a single hairline colored bar animates left to right across the top edge of a panel while data loads, rather than a spinner icon.
+
+Connection mode indicator: a small tag in the top right corner of the session rail, reading LIVE, REPLAY, or SYNTHETIC depending on which market data source feeds the current run, set in caption style with a matching status tag treatment.
+
+Breach state: covered in section 8, a red flash settling to a steady red border, plus the account's status tag switching from its phase color to the fail red immediately.
+
+10. ACCESSIBILITY AND RESPONSIVE BEHAVIOR
+
+Every interactive element gets a visible focus ring in the interactive blue at 2px, offset 2px from the element edge, visible on keyboard navigation.
+
+Color never carries meaning alone. Every status tag pairs its color with a text label. Every chart reference line pairs its color with a caption naming what the line represents.
+
+Below 1024px width, the left rail collapses into a horizontal scrollable strip beneath the session rail, and the overview grid drops from four panels across to two. Below 640px width, the overview grid drops to one panel per row, and the account detail screen stacks its three regions with no side by side layout at any point.
+
+11. SUMMARY
+
+The dashboard borrows its logic from a trading terminal rather than a generic app template. A near black base, a small set of colors each tied to a real state in the simulation, a monospace numeric system that keeps every figure aligned and legible, and one signature element, the session rail, that carries real information about market conditions rather than existing as decoration. No rounded corners, no shadow blur, no purple, anywhere in the interface. Every visual choice ties back to a person needing a fast, exact read on which of their agents stand safe and which stand close to a breach.

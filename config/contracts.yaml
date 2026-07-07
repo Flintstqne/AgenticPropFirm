@@ -1,0 +1,143 @@
+# Contract specifications. Source: AGENTS.md contract specification table.
+# Margin figures are representative; confirm against exchange spec pages before final calibration.
+# pip_value: null means recalculate per trade against live rate (USD is base currency).
+
+ES:
+  type: future
+  tick_size: 0.25
+  tick_value: 12.50
+  point_value: 50
+  margin: 13200
+  commission_per_side: 2.25
+  spread_ticks: 1
+
+NQ:
+  type: future
+  tick_size: 0.25
+  tick_value: 5.00
+  point_value: 20
+  margin: 18700
+  commission_per_side: 2.25
+  spread_ticks: 1
+
+YM:
+  type: future
+  tick_size: 1.0
+  tick_value: 5.00
+  point_value: 5
+  margin: 8800
+  commission_per_side: 2.25
+  spread_ticks: 1
+
+CL:
+  type: future
+  tick_size: 0.01
+  tick_value: 10.00
+  point_value: 1000
+  margin: 6500
+  commission_per_side: 2.25
+  spread_ticks: 2
+
+GC:
+  type: future
+  tick_size: 0.10
+  tick_value: 10.00
+  point_value: 100
+  margin: 9900
+  commission_per_side: 2.25
+  spread_ticks: 1
+
+ZN:
+  type: future
+  tick_size: 0.015625
+  tick_value: 15.625
+  point_value: 1000
+  margin: 1900
+  commission_per_side: 2.25
+  spread_ticks: 1
+
+6E:
+  type: future
+  tick_size: 0.00005
+  tick_value: 6.25
+  point_value: 125000
+  margin: 2400
+  commission_per_side: 2.25
+  spread_ticks: 1
+
+EUR_USD:
+  type: forex
+  pip_size: 0.0001
+  lot_size: 100000
+  pip_value: 10
+  spread_pips_peak: 0.5
+  commission_per_side: 3.50
+  swap_long: -7.0
+  swap_short: 2.0
+  leverage: 30
+
+USD_JPY:
+  type: forex
+  pip_size: 0.01
+  lot_size: 100000
+  pip_value: null
+  spread_pips_peak: 0.5
+  commission_per_side: 3.50
+  swap_long: -7.0
+  swap_short: 2.0
+  leverage: 30
+
+GBP_USD:
+  type: forex
+  pip_size: 0.0001
+  lot_size: 100000
+  pip_value: 10
+  spread_pips_peak: 1.0
+  commission_per_side: 3.50
+  swap_long: -7.0
+  swap_short: 2.0
+  leverage: 30
+
+USD_CHF:
+  type: forex
+  pip_size: 0.0001
+  lot_size: 100000
+  pip_value: null
+  spread_pips_peak: 1.5
+  commission_per_side: 3.50
+  swap_long: -7.0
+  swap_short: 2.0
+  leverage: 30
+
+AUD_USD:
+  type: forex
+  pip_size: 0.0001
+  lot_size: 100000
+  pip_value: 10
+  spread_pips_peak: 1.0
+  commission_per_side: 3.50
+  swap_long: -7.0
+  swap_short: 2.0
+  leverage: 30
+
+USD_CAD:
+  type: forex
+  pip_size: 0.0001
+  lot_size: 100000
+  pip_value: null
+  spread_pips_peak: 1.5
+  commission_per_side: 3.50
+  swap_long: -7.0
+  swap_short: 2.0
+  leverage: 30
+
+NZD_USD:
+  type: forex
+  pip_size: 0.0001
+  lot_size: 100000
+  pip_value: 10
+  spread_pips_peak: 1.5
+  commission_per_side: 3.50
+  swap_long: -7.0
+  swap_short: 2.0
+  leverage: 30

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Prop Firm Simulation Dashboard Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0D10;
+    --panel: #15181D;
+    --panel-hover: #1B1F26;
+    --border: #272C33;
+    --text: #ECEEF0;
+    --text-secondary: #8A93A1;
+    --green: #35B075;
+    --red: #D64545;
+    --amber: #D4972B;
+    --blue: #3E7CFF;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --display: 'Space Grotesk', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+  .app {
+    display: grid;
+    grid-template-rows: 64px 44px 1fr 40px;
+    height: 100vh;
+  }
+
+  /* SESSION RAIL */
+  .session-rail {
+    border-bottom: 1px solid var(--border);
+    padding: 8px 24px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+  }
+  .session-rail-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .session-rail-title {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+  }
+  .session-clock {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .session-clock span { color: var(--text); font-weight: 500; }
+  .rail-track {
+    position: relative;
+    height: 14px;
+    background: #0F1216;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .rail-band {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    mix-blend-mode: screen;
+  }
+  .rail-band.sydney  { left: 0%;      width: 37.5%; background: rgba(62,124,255,0.20); }
+  .rail-band.tokyo   { left: 8.33%;   width: 37.5%; background: rgba(62,124,255,0.20); }
+  .rail-band.london  { left: 41.67%;  width: 37.5%; background: rgba(62,124,255,0.20); }
+  .rail-band.newyork { left: 62.5%;   width: 37.5%; background: rgba(62,124,255,0.20); }
+  .rail-marker {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: var(--blue);
+    left: 0%;
+    animation: sweep 24s linear infinite;
+  }
+  @keyframes sweep {
+    from { left: 0%; }
+    to { left: 100%; }
+  }
+  .rail-labels {
+    display: flex;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+  .rail-labels span { flex: 1; }
+
+  /* NAV */
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-tab {
+    font-family: var(--sans);
+    font-weight: 500;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 12px 14px;
+    cursor: pointer;
+  }
+  .nav-tab.active { color: var(--text); border-bottom-color: var(--blue); }
+  .nav-tab:hover { color: var(--text); }
+  .nav-status {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mode-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 4px 8px;
+    border-left: 3px solid var(--blue);
+    background: var(--panel);
+    color: var(--text-secondary);
+  }
+
+  /* BODY */
+  .body {
+    display: flex;
+    min-height: 0;
+  }
+  .left-rail {
+    width: 280px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .left-rail-header {
+    padding: 12px 16px;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+  }
+  .account-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+  .account-item:hover { background: var(--panel-hover); }
+  .account-item.selected { background: var(--panel); border-left-color: var(--blue); }
+  .account-item-left { display: flex; flex-direction: column; gap: 2px; }
+  .account-item-name { font-size: 12px; font-weight: 500; }
+  .account-item-type { font-size: 10px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+  .account-item-equity { font-family: var(--mono); font-size: 12px; }
+
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+  }
+
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* TAGS */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    background: var(--panel);
+    border-left: 3px solid var(--text-secondary);
+    color: var(--text-secondary);
+  }
+  .tag.challenge     { border-left-color: var(--blue); color: var(--text); }
+  .tag.verification  { border-left-color: var(--amber); color: var(--text); }
+  .tag.funded        { border-left-color: var(--green); color: var(--text); }
+  .tag.failed        { border-left-color: var(--red); color: var(--text); }
+
+  /* OVERVIEW GRID */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+  .account-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 16px;
+    cursor: pointer;
+  }
+  .account-panel:hover { background: var(--panel-hover); }
+  .panel-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+  .panel-eyebrow { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); }
+  .panel-name { font-family: var(--display); font-size: 15px; font-weight: 500; margin-top: 2px; }
+  .panel-equity { font-family: var(--mono); font-size: 28px; font-weight: 600; margin: 10px 0 8px; }
+  .dd-label { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-secondary); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 4px; }
+  .dd-bar { height: 6px; background: #0F1216; border: 1px solid var(--border); margin-bottom: 12px; }
+  .dd-fill { height: 100%; }
+  .sparkline { width: 100%; height: 36px; display: block; }
+
+  /* DETAIL SCREEN */
+  .back-link {
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--blue);
+    cursor: pointer;
+    display: inline-block;
+    margin-bottom: 16px;
+    letter-spacing: 0.02em;
+  }
+  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .detail-title { font-family: var(--display); font-size: 28px; font-weight: 500; }
+  .chart-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .chart-panel svg { width: 100%; height: 220px; display: block; }
+  .stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+  .stat-block { background: var(--panel); border: 1px solid var(--border); padding: 14px 16px; }
+  .stat-label { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 8px; }
+  .stat-value { font-family: var(--mono); font-size: 22px; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--blue);
+    background: var(--panel);
+  }
+  thead th.num { text-align: right; }
+  tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  tbody td.num { text-align: right; font-family: var(--mono); }
+  tbody tr:hover { background: var(--panel-hover); }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+
+  .filter-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .filter-select {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  .alert-line {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    margin-bottom: 8px;
+    font-size: 13px;
+    align-items: baseline;
+  }
+  .alert-time { font-family: var(--mono); font-size: 11px; color: var(--text-secondary); white-space: nowrap; }
+  .alert-line.fail { border-left: 3px solid var(--red); }
+  .alert-line.warn { border-left: 3px solid var(--amber); }
+
+  /* ALERT STRIP */
+  .alert-strip {
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 24px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .alert-strip .dot { width: 6px; height: 6px; display: inline-block; margin-right: 6px; }
+  .dot.red { background: var(--red); }
+  .dot.amber { background: var(--amber); }
+  .dot.green { background: var(--green); }
+
+  h2.section-title { font-family: var(--display); font-size: 20px; font-weight: 500; margin-bottom: 16px; }
+  .rank { font-family: var(--mono); font-size: 18px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="session-rail">
+    <div class="session-rail-top">
+      <div class="session-rail-title">SESSION RAIL</div>
+      <div class="session-clock">SIMULATED TIME <span id="clockReadout">17:00 ET</span></div>
+    </div>
+    <div class="rail-track">
+      <div class="rail-band sydney"></div>
+      <div class="rail-band tokyo"></div>
+      <div class="rail-band london"></div>
+      <div class="rail-band newyork"></div>
+      <div class="rail-marker"></div>
+    </div>
+    <div class="rail-labels">
+      <span>SYDNEY</span>
+      <span>TOKYO</span>
+      <span>LONDON</span>
+      <span>NEW YORK</span>
+    </div>
+  </div>
+
+  <div class="nav">
+    <button class="nav-tab active" data-screen="overview">Overview</button>
+    <button class="nav-tab" data-screen="ledger">Trade Ledger</button>
+    <button class="nav-tab" data-screen="leaderboard">Leaderboard</button>
+    <button class="nav-tab" data-screen="alerts">Alerts</button>
+    <div class="nav-status">
+      <div class="mode-tag">MODE: HISTORICAL REPLAY</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="left-rail">
+      <div class="left-rail-header">Accounts (8)</div>
+      <div id="accountList"></div>
+    </div>
+
+    <div class="main">
+
+      <div class="screen active" id="screen-overview">
+        <h2 class="section-title">Account Overview</h2>
+        <div class="overview-grid" id="overviewGrid"></div>
+      </div>
+
+      <div class="screen" id="screen-detail">
+        <span class="back-link" onclick="showScreen('overview')">&larr; Back to overview</span>
+        <div class="detail-header">
+          <div class="detail-title" id="detailName">Agent 07</div>
+          <span class="tag funded" id="detailPhase">FUNDED</span>
+        </div>
+        <div class="chart-panel">
+          <svg viewBox="0 0 600 220" preserveAspectRatio="none">
+            <line x1="0" y1="30" x2="600" y2="30" stroke="#8A93A1" stroke-dasharray="4 4" stroke-width="1"/>
+            <line x1="0" y1="190" x2="600" y2="190" stroke="#8A93A1" stroke-dasharray="4 4" stroke-width="1"/>
+            <polyline points="0,150 40,140 80,145 120,120 160,130 200,100 240,110 280,90 320,95 360,80 400,85 440,70 480,75 520,60 560,65 600,55"
+              fill="none" stroke="#35B075" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="stat-row">
+          <div class="stat-block"><div class="stat-label">Balance</div><div class="stat-value">24,000.00</div></div>
+          <div class="stat-block"><div class="stat-label">Equity</div><div class="stat-value">24,180.55</div></div>
+          <div class="stat-block"><div class="stat-label">Daily Loss Used</div><div class="stat-value" style="color:var(--amber)">2.1%</div></div>
+          <div class="stat-block"><div class="stat-label">Days Completed</div><div class="stat-value">14 / 10</div></div>
+        </div>
+        <h2 class="section-title">Open Positions</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Instrument</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Current</th><th class="num">Unrealized P&L</th>
+            </tr>
+          </thead>
+          <tbody id="positionsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="screen" id="screen-ledger">
+        <h2 class="section-title">Trade Ledger</h2>
+        <div class="filter-row">
+          <select class="filter-select"><option>All agents</option></select>
+          <select class="filter-select"><option>All instruments</option></select>
+          <select class="filter-select"><option>Last 7 days</option></select>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th><th>Instrument</th><th>Side</th><th class="num">Size</th><th class="num">Entry</th><th class="num">Exit</th><th class="num">Realized P&L</th>
+            </tr>
+          </thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
+      </div>
+
+      <div class="screen" id="screen-leaderboard">
+        <h2 class="section-title">Leaderboard</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th><th>Agent</th><th>Framework</th><th class="num">Sortino Ratio</th><th class="num">Max Drawdown</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody"></tbody>
+        </table>
+      </div>
+
+      <div class="screen" id="screen-alerts">
+        <h2 class="section-title">Alert and Rule Violation Log</h2>
+        <div id="alertsBody"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="alert-strip" id="alertStrip"></div>
+
+</div>
+
+<script>
+const accounts = [
+  { id: 1, name: "Agent 01", type: "REINFORCEMENT LEARNING", phase: "funded", equity: 24180.55, drawdown: 62, trend: "up" },
+  { id: 2, name: "Agent 02", type: "LLM TOOL USE", phase: "challenge", equity: 10412.30, drawdown: 28, trend: "up" },
+  { id: 3, name: "Agent 03", type: "REINFORCEMENT LEARNING", phase: "verification", equity: 10890.10, drawdown: 41, trend: "down" },
+  { id: 4, name: "Agent 04", type: "LLM TOOL USE", phase: "failed", equity: 8950.00, drawdown: 100, trend: "down" },
+  { id: 5, name: "Agent 05", type: "REINFORCEMENT LEARNING", phase: "funded", equity: 51200.75, drawdown: 15, trend: "up" },
+  { id: 6, name: "Agent 06", type: "LLM TOOL USE", phase: "challenge", equity: 9870.40, drawdown: 55, trend: "down" },
+  { id: 7, name: "Agent 07", type: "REINFORCEMENT LEARNING", phase: "verification", equity: 10120.00, drawdown: 33, trend: "up" },
+  { id: 8, name: "Agent 08", type: "LLM TOOL USE", phase: "funded", equity: 22300.90, drawdown: 48, trend: "up" }
+];
+
+function ddColor(pct) {
+  if (pct >= 80) return "var(--red)";
+  if (pct >= 55) return "var(--amber)";
+  return "var(--green)";
+}
+
+function sparklinePoints(trend) {
+  const up = [30,28,29,24,26,20,22,15,17,10,12,6];
+  const down = [6,8,7,12,10,16,14,20,18,25,22,30];
+  const vals = trend === "up" ? up : down;
+  return vals.map((v, i) => `${i * (100/(vals.length-1))},${v+2}`).join(" ");
+}
+
+function renderAccountList() {
+  const el = document.getElementById("accountList");
+  el.innerHTML = accounts.map(a => `
+    <div class="account-item" data-id="${a.id}" onclick="selectAccount(${a.id})">
+      <div class="account-item-left">
+        <div class="account-item-name">${a.name}</div>
+        <div class="account-item-type">${a.type}</div>
+      </div>
+      <div class="account-item-equity">${a.equity.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+    </div>
+  `).join("");
+}
+
+function renderOverview() {
+  const el = document.getElementById("overviewGrid");
+  el.innerHTML = accounts.map(a => `
+    <div class="account-panel" onclick="selectAccount(${a.id})">
+      <div class="panel-top">
+        <div>
+          <div class="panel-eyebrow">${a.type}</div>
+          <div class="panel-name">${a.name}</div>
+        </div>
+        <span class="tag ${a.phase}">${a.phase}</span>
+      </div>
+      <div class="panel-equity">${a.equity.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+      <div class="dd-label"><span>Drawdown</span><span>${a.drawdown}% of limit</span></div>
+      <div class="dd-bar"><div class="dd-fill" style="width:${a.drawdown}%; background:${ddColor(a.drawdown)}"></div></div>
+      <svg class="sparkline" viewBox="0 0 100 36" preserveAspectRatio="none">
+        <polyline points="${sparklinePoints(a.trend)}" fill="none" stroke="${a.trend === 'up' ? 'var(--green)' : 'var(--red)'}" stroke-width="1.5"/>
+      </svg>
+    </div>
+  `).join("");
+}
+
+function selectAccount(id) {
+  const a = accounts.find(x => x.id === id);
+  document.getElementById("detailName").textContent = a.name;
+  const phaseTag = document.getElementById("detailPhase");
+  phaseTag.textContent = a.phase.toUpperCase();
+  phaseTag.className = "tag " + a.phase;
+  document.querySelectorAll(".account-item").forEach(item => {
+    item.classList.toggle("selected", item.dataset.id == id);
+  });
+  document.getElementById("positionsBody").innerHTML = `
+    <tr><td>EUR/USD</td><td>Long</td><td class="num">1.00</td><td class="num">1.08420</td><td class="num">1.08610</td><td class="num pos">+190.00</td></tr>
+    <tr><td>CL</td><td>Short</td><td class="num">2</td><td class="num">78.40</td><td class="num">78.05</td><td class="num pos">+700.00</td></tr>
+    <tr><td>GBP/USD</td><td>Long</td><td class="num">0.50</td><td class="num">1.27200</td><td class="num">1.27050</td><td class="num neg">-75.00</td></tr>
+  `;
+  showScreen("detail");
+}
+
+function renderLedger() {
+  const rows = [
+    ["Agent 01","EUR/USD","Long","1.00","1.08120","1.08420","pos","+300.00"],
+    ["Agent 05","ES","Short","1","5412.00","5398.50","pos","+675.00"],
+    ["Agent 04","USD/JPY","Long","2.00","148.20","147.65","neg","-1100.00"],
+    ["Agent 03","6E","Long","1","1.08650","1.08590","neg","-75.00"],
+    ["Agent 08","GC","Short","1","2385.00","2371.20","pos","+1380.00"]
+  ];
+  document.getElementById("ledgerBody").innerHTML = rows.map(r => `
+    <tr>
+      <td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>
+      <td class="num">${r[3]}</td><td class="num">${r[4]}</td><td class="num">${r[5]}</td>
+      <td class="num ${r[6]}">${r[6] === 'pos' ? '+' : ''}${r[7]}</td>
+    </tr>
+  `).join("");
+}
+
+function renderLeaderboard() {
+  const rows = [
+    [1,"Agent 05","Reinforcement Learning","2.41","15%"],
+    [2,"Agent 01","Reinforcement Learning","1.98","62%"],
+    [3,"Agent 08","LLM Tool Use","1.72","48%"],
+    [4,"Agent 07","Reinforcement Learning","1.30","33%"],
+    [5,"Agent 02","LLM Tool Use","1.04","28%"],
+    [6,"Agent 03","Reinforcement Learning","0.61","41%"],
+    [7,"Agent 06","LLM Tool Use","0.22","55%"],
+    [8,"Agent 04","LLM Tool Use","-0.85","100%"]
+  ];
+  document.getElementById("leaderboardBody").innerHTML = rows.map(r => `
+    <tr>
+      <td class="rank">${String(r[0]).padStart(2,'0')}</td><td>${r[1]}</td><td>${r[2]}</td>
+      <td class="num">${r[3]}</td><td class="num">${r[4]}</td>
+    </tr>
+  `).join("");
+}
+
+function renderAlerts() {
+  const alerts = [
+    ["17:42 ET","fail","Agent 04 exceeded the daily loss limit at 5.1% against a 5.0% cap."],
+    ["16:58 ET","warn","Agent 06 crossed 70% of its maximum drawdown limit."],
+    ["15:20 ET","warn","Agent 03 crossed 70% of its daily loss limit."],
+    ["14:05 ET","fail","Agent 04 held a position through the weekend closure window."],
+    ["11:30 ET","warn","Agent 02 approached the consistency rule threshold at 24% of total profit from one day."]
+  ];
+  document.getElementById("alertsBody").innerHTML = alerts.map(a => `
+    <div class="alert-line ${a[1]}">
+      <span class="alert-time">${a[0]}</span>
+      <span>${a[2]}</span>
+    </div>
+  `).join("");
+  document.getElementById("alertStrip").innerHTML = alerts.slice(0,3).map(a => `
+    <span><span class="dot ${a[1] === 'fail' ? 'red' : 'amber'}"></span>${a[0]} ${a[2]}</span>
+  `).join("");
+}
+
+function showScreen(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById("screen-" + name).classList.add("active");
+  document.querySelectorAll(".nav-tab").forEach(t => t.classList.toggle("active", t.dataset.screen === name));
+}
+
+document.querySelectorAll(".nav-tab").forEach(tab => {
+  tab.addEventListener("click", () => showScreen(tab.dataset.screen));
+});
+
+renderAccountList();
+renderOverview();
+renderLedger();
+renderLeaderboard();
+renderAlerts();
+
+const clock = document.getElementById("clockReadout");
+let hour = 17;
+let minute = 0;
+setInterval(() => {
+  minute += 5;
+  if (minute >= 60) { minute = 0; hour = (hour + 1) % 24; }
+  const h = String(hour).padStart(2, "0");
+  const m = String(minute).padStart(2, "0");
+  clock.textContent = `${h}:${m} ET`;
+}, 500);
+</script>
+
+</body>
+</html>

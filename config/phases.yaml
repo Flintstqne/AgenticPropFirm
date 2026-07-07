@@ -1,0 +1,40 @@
+# Evaluation phase parameters. Source: AGENTS.md evaluation phases section.
+# Every figure here is a config value, never a hardcoded constant.
+# drawdown_mode: static (vs starting balance) or trailing (vs peak equity), per phase.
+# On phase advance the account balance resets to starting_balance, modeling a
+# real prop firm issuing a fresh account for each phase.
+
+challenge:
+  profit_target_pct: 0.08
+  daily_loss_pct: 0.05
+  max_drawdown_pct: 0.10
+  drawdown_mode: static
+  min_trading_days: 5
+  consistency_cap_pct: 0.30
+  next: verification
+
+verification:
+  profit_target_pct: 0.04
+  daily_loss_pct: 0.05
+  max_drawdown_pct: 0.10
+  drawdown_mode: static
+  min_trading_days: 5
+  consistency_cap_pct: 0.30
+  next: funded
+
+funded:
+  profit_target_pct: null      # no target; account runs until a rule failure
+  daily_loss_pct: 0.05
+  max_drawdown_pct: 0.10
+  drawdown_mode: static
+  min_trading_days: 0
+  consistency_cap_pct: null    # consistency not enforced once funded
+  profit_split: 0.80           # scoring only, no real money moves
+  next: null
+
+# Position and leverage caps, applied during challenge and verification.
+# Funded-phase caps revisit once a scaling plan exists (deferred, see AGENTS.md).
+position_limits:
+  max_forex_lots_per_instrument: 1
+  max_futures_contracts_per_instrument: 2
+  max_total_notional_multiple: 5

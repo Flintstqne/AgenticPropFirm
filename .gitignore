@@ -1,0 +1,11 @@
+venv/
+node_modules/
+dashboard/client/dist/
+db/propfirm.sqlite
+data/raw/
+data/calibrated/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.claude/

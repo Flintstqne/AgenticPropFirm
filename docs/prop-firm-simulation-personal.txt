@@ -1,0 +1,605 @@
+PROP FIRM SIMULATION FOR AI AGENTS
+A personal project design document, built entirely with free tools
+
+1. PURPOSE AND SCOPE
+
+This document lays out a design for a prop firm style simulation you build and run for yourself. You put AI agents into it and watch them trade under the same kind of rules a real prop firm uses: profit targets, drawdown limits, daily loss caps, and funded account progression. Nothing here needs a paid service, a hosting bill, or real money. You run it on your own machine, using free data sources and open source software.
+
+2. CORE CONCEPT
+
+A prop firm challenge works like a game with strict rules. A trader starts with a set balance, must hit a profit target, and must never break a loss limit. Break the limit and you fail instantly. Hit the target while following every rule and you move up a level.
+
+Your simulation copies this loop:
+
+1. An agent starts a challenge account with a set balance.
+2. The agent places trades against market data.
+3. A rules engine checks every trade against your loss and drawdown limits in real time.
+4. Break a rule and the account fails.
+5. Hit the profit target while following every rule and the agent moves to the next phase or gets funded.
+6. Funded agents keep trading, and you track their simulated profit on a ledger.
+7. A dashboard shows account state, equity curve, and rule status.
+
+3. ARCHITECTURE OVERVIEW
+
+Build the system in six parts. Each part does one job.
+
+3.1 Market Data
+Feeds price data into the simulation, covering forex and futures. Three sources, all free:
+- Historical replay: download free historical data for currency pairs and futures contracts, stream this data into the simulation at whatever speed you set.
+- Live feed: pull free real time or delayed quotes from a public API for forex pairs and major futures contracts.
+- Synthetic data: build a generator modeling volatility clustering, trend persistence, mean reversion, and sudden price jumps around news events, so agents train against a wide range of conditions and avoid overfitting to a single historical stretch. See section 11 for the full synthetic generator design.
+
+3.2 Matching and Execution
+Turns agent orders into fills. Model spread, slippage, commission, and margin so results match forex and futures markets closely. Spread widens during volatile moments and thins during quiet sessions. Slippage grows with order size relative to available liquidity. See section 12 for the full execution model.
+
+3.3 Account Ledger
+Tracks balance, equity, open positions, and profit and loss for every account. Every trade writes a permanent record so you can always answer "how did this account get here."
+
+3.4 Rules Engine
+Checks every trade and every price tick against your rule set: profit target, daily loss limit, max drawdown, minimum trading days. Runs the moment a trade happens, not on a delay.
+
+3.5 Agent Interface
+The code your AI agents call to see the market, see their account, and place orders. Build support for reinforcement learning agents and LLM agents at the same time, since both share the same account state, market data, and rule checks underneath.
+
+3.6 Dashboard
+A screen showing equity curve, drawdown, daily P&L, and rule status for each agent account. Build this as a React application, since you plan to self host and want room to add features over time.
+
+3.7 Instrument Scope
+Cover the full set of major forex pairs and major futures contracts in version one, rather than narrowing to a single instrument.
+
+Forex majors:
+- EUR/USD
+- USD/JPY
+- GBP/USD
+- USD/CHF
+- AUD/USD
+- USD/CAD
+- NZD/USD
+
+Futures majors:
+- E-mini S&P 500 (ES)
+- E-mini Nasdaq 100 (NQ)
+- E-mini Dow (YM)
+- Crude Oil (CL)
+- Gold (GC)
+- 10 Year Treasury Note (ZN)
+- Euro FX futures (6E)
+
+Pull Dukascopy tick history for every forex pair above and Databento or Nasdaq Data Link history for every futures contract above. Calibrate your synthetic generator (section 11) against each instrument separately, since volatility and session behavior differ across pairs and contracts.
+
+4. EVALUATION PROGRAM
+
+Give your agents a phase structure to climb, the same shape real prop firms use.
+
+4.1 Phase 1: Challenge
+- Starting balance: pick anything, 10,000 simulated units works well.
+- Profit target: 8 to 10 percent of starting balance.
+- Max daily loss: 4 to 5 percent, measured from the start of day balance.
+- Max overall drawdown: 8 to 12 percent, measured from either the starting balance or the highest equity point reached.
+- Minimum trading days: 5 to 10, so a single lucky trade cannot pass the challenge.
+
+4.2 Phase 2: Verification
+Same loss and drawdown rules as Phase 1, but a lower profit target, often half of Phase 1's target. This checks whether the agent's edge repeats.
+
+4.3 Funded Phase
+The agent trades a simulated funded account. Track a profit split for fun, for example 80 percent of profit "paid" to the agent and 20 percent kept, purely as a scoring mechanism since no real money moves. Keep the same loss and drawdown rules active.
+
+5. RISK RULE CATALOG
+
+Build each rule as an independent function that checks account state and returns pass, warn, or fail.
+
+5.1 Daily Loss Limit
+Fail the account if equity drops below a set percentage of the start of day balance. Reset the reference point once a day at a fixed time you choose.
+
+5.2 Maximum Drawdown
+Two versions:
+- Static: measured against the starting balance, never moves.
+- Trailing: measured against the highest equity the account ever reached.
+
+5.3 Consistency Rule
+Caps how much of total profit can come from one single day, for example 20 to 30 percent. Stops an agent from passing on one big trade.
+
+5.4 Minimum Trading Days
+Count a day as active only if the agent placed at least one trade that day.
+
+5.5 Position Size Limits
+Cap the maximum size or exposure per trade and per account, so one oversized trade cannot decide the whole outcome.
+
+6. AGENT INTERFACE DESIGN
+
+Build this like a game environment so any AI framework can connect with little extra code.
+
+6.1 Observation
+Send the agent, on every tick or bar:
+- Market data: recent price bars, current bid and ask.
+- Account state: balance, equity, open positions, unrealized profit and loss.
+- Rule state: daily loss used, drawdown used, days completed, progress toward the profit target.
+
+6.2 Actions
+- Place an order: buy or sell, with size, stop loss, and take profit.
+- Modify an open order.
+- Close a position, fully or partially.
+- Hold, meaning do nothing this step.
+
+6.3 Reward Signal
+Combine two reward types for your reinforcement learning agents:
+- Risk adjusted return on a rolling window, calculated step by step, so the agent gets steady feedback that favors steady growth over big swings.
+- A large reward for passing a phase or reaching a funded account, and a matching penalty for a rule violation, so the agent learns the pass and fail boundaries directly.
+
+Weight the phase completion reward heavier than the per step risk adjusted reward, since passing a phase without breaking a rule stands as the actual goal. Use the per step reward mainly to shape behavior between milestones.
+
+6.4 Protocol
+Build two thin wrappers around the same core simulation, since the account ledger, market data, and rules engine stay identical underneath:
+- A Python class with a step function and a reset function, matching the pattern used by Gymnasium, the free open source library for reinforcement learning environments.
+- A set of plain Python functions an LLM agent calls as tools (get market state, get account state, place order, close position), returning readable text or structured JSON depending on what your agent framework expects.
+
+Since both wrappers sit on the same core, a fix to the rules engine or matching engine applies to reinforcement learning agents and LLM agents without extra work.
+
+7. DATA MODEL
+
+Use SQLite for everything. It costs nothing, needs no server, and handles this scale without trouble.
+
+Tables:
+- accounts: account id, agent id, phase, starting balance, current balance, current equity, status, created at.
+- trades: trade id, account id, instrument, side, size, entry price, exit price, entry time, exit time, realized profit and loss.
+- rule_violations: violation id, account id, rule name, triggered at, details.
+- equity_snapshots: account id, timestamp, equity, balance. This lets you reconstruct drawdown and daily loss at any past moment.
+- agents: agent id, name, framework type, notes.
+
+If your tick data grows large, store it in Parquet files on disk and read it with DuckDB, a free, fast, local analytics engine that reads Parquet directly with no setup.
+
+8. FREE TECHNOLOGY STACK
+
+Everything below costs nothing and runs on a personal computer.
+
+Data sources:
+- Dukascopy historical tick data, free to download, for forex, going back many years across major and minor pairs.
+- Databento, free usage credits for historical futures data across CME products, enough to build and test against real futures price history without a subscription.
+- Nasdaq Data Link (formerly Quandl), free datasets covering continuous futures contracts for many commodities and financial futures.
+- yfinance, a free Python library that pulls historical stock, index, ETF, and some continuous futures data from Yahoo Finance, useful as a secondary source or a quick sanity check against your primary futures data.
+- Alpha Vantage free tier API key, for forex, with a daily request cap fine for personal use.
+
+Backend and storage:
+- Python for the matching engine, rules engine, and agent interface.
+- SQLite for accounts, trades, and rule violations.
+- DuckDB or plain Parquet files for large historical tick data.
+
+Agent frameworks:
+- Gymnasium, free and open source, for a reinforcement learning style step and reset interface.
+- Stable-Baselines3, free and open source, if you want to train reinforcement learning agents directly against your environment.
+- Plain Python functions as tools for an LLM agent, no paid framework needed.
+
+Dashboard:
+- Node.js with Express for a lightweight backend API, serving account state, trade history, and rule status from your SQLite database.
+- React with Vite for the frontend, giving you full control over layout and component structure, and a fast local dev server with no cost.
+- Recharts or Chart.js for equity curves, drawdown gauges, and profit and loss charts, both free and simple to wire into React components.
+- A native WebSocket connection (or Socket.io) between your Express backend and React frontend, so account updates and price ticks push to the screen in real time instead of relying on page refresh.
+- Tailwind CSS for styling, since you get a full design system without writing custom CSS files for every component.
+
+Hosting:
+- Run the Node backend and React build on your own machine or a home server. Point a process manager such as PM2 at the backend so it restarts on its own if your machine reboots.
+- If you want a clean local domain name instead of an IP address and port, add Caddy or Nginx as a reverse proxy in front of Node. Both are free and run well on a small home server.
+- Access the dashboard from your phone or another device over your home network through the same local IP, no cloud hosting needed.
+
+9. SIMULATION FIDELITY OPTIONS
+
+Since you want realistic spread, fills, and synthetic data from the start, treat the levels below as a build order rather than a final destination.
+
+9.1 Low Fidelity
+Random walk price generation, fixed spread, instant fills. Build this first, purely to confirm your rules engine and ledger work before you add real complexity.
+
+9.2 Medium Fidelity
+Historical data replay for forex and futures, with your slippage and spread model wired in. Gives your agents real market conditions to learn from, still free using Dukascopy and Databento history.
+
+9.3 High Fidelity
+Your full synthetic generator (section 11) layered on top of historical replay, plus your complete execution model (section 12). Run agents against a mix of real history and generated conditions, so a strategy tuned to one historical stretch does not pass simply from memorizing that stretch.
+
+10. TESTING YOUR RULES
+
+Before trusting the system, check it against cases where you already know the answer:
+- Build an account that should fail on day 3 by hand, feed it through the engine, and confirm it fails on day 3.
+- Build an account that should just barely pass, and confirm it passes.
+- Push thousands of simulated accounts through historical data overnight and check the pass rate looks reasonable, not close to zero or close to one hundred percent.
+
+11. SYNTHETIC MARKET DATA GENERATOR
+
+A random walk teaches an agent nothing about how real forex and futures markets behave. Build a generator with these pieces, each modeling a real market property:
+
+11.1 Volatility Clustering
+Real markets move through calm stretches and turbulent stretches, and turbulent stretches tend to follow other turbulent stretches. Model this with a GARCH process, using the free Python library arch, so your simulated volatility rises and falls in realistic clusters rather than staying flat.
+
+11.2 Regime Switching
+Markets shift between trending regimes and range bound regimes. Model this with a Markov switching model, using the free Python library statsmodels, so your generator alternates between regimes the way real forex pairs and futures contracts do across weeks and months.
+
+11.3 Trend Persistence and Mean Reversion
+Layer a trend component on top of the regime state, so trending regimes drift in one direction over many bars, and add a mean reverting pull during range bound regimes, so price oscillates around a moving average instead of drifting randomly.
+
+11.4 Jump Events
+Real markets gap and spike around news releases and surprise events. Add a jump diffusion component, a small chance on any given bar of a sudden price move well outside the normal volatility range, so your agents build tolerance for shock events instead of only smooth conditions.
+
+11.5 Calibration Against Real Data
+Fit the parameters of your GARCH and regime switching models against your downloaded Dukascopy and Databento history, so your synthetic paths match the volatility and regime statistics of the real instrument you plan to trade, rather than arbitrary made up numbers.
+
+11.6 Mixed Training Sets
+Train and test agents against a blend of pure historical replay and generated synthetic paths. An agent that only ever sees historical data risks learning the specific history rather than the underlying market behavior. A blend of both closes this gap.
+
+12. EXECUTION REALISM, SPREAD AND FILLS
+
+12.1 Spread Model
+Set a base spread per instrument, then widen the spread as a function of current simulated volatility and trading session. Forex spreads widen outside the London and New York session overlap and around low liquidity hours. Futures spreads widen near contract rollover dates and during low volume overnight sessions. Pull typical spread ranges from your historical tick data during calibration.
+
+12.2 Slippage Model
+Grow slippage with order size relative to a liquidity estimate for that instrument and that moment. A small order in a liquid forex pair during peak hours gets filled near the quoted price. A large order during thin overnight futures volume slips further from the quoted price. Base your liquidity estimate on recent tick volume from your historical data.
+
+12.3 Partial Fills
+Large orders relative to available liquidity fill in pieces rather than all at once. Model this by splitting an order into smaller fills across a short window of simulated time, each fill priced slightly worse than the last, matching how a real large order works through available liquidity.
+
+12.4 Commission, Swap, and Margin
+Apply commission per trade or per lot, matched to typical forex and futures broker rates. Apply overnight swap or financing charges for positions held past the daily rollover time. Track margin used against each open position, based on the contract size and leverage you configure, and reject orders that exceed available margin.
+
+13. TIME STEP AND SIMULATION CLOCK DESIGN
+
+Run two clocks at once. An agent decides once per simulated minute. The engine underneath processes every tick inside that minute.
+
+13.1 Agent Decision Cadence
+Give the agent one observation and one action per simulated minute, across every instrument. A one minute cadence keeps training runs fast and still catches daily loss and drawdown breaches with good precision. Tick level decisions multiply data volume and slow every training run without adding much value for an agent making trading decisions rather than market making decisions.
+
+13.2 Internal Tick Processing
+Between two agent decisions, feed every tick inside that one minute window into the matching engine. Check every open stop loss order, take profit order, and pending limit order against each tick, so an order triggers at the tick where price actually crosses it, not only at the one minute close. Historical replay supplies real ticks directly. Synthetic generation supplies generated ticks at a similar density, denser during active sessions and thinner during quiet hours.
+
+13.3 Risk Checks at Tick Resolution
+Run your rules engine checks for daily loss and maximum drawdown on every tick, not only at the one minute boundary. An account that breaches a limit mid minute fails at the moment of the breach, matching how a real prop firm enforces these rules.
+
+13.4 Storage Split
+Store every tick in Parquet files for replay, audit, and calibration. Store one row per minute bar in your SQLite equity_snapshots table, since your dashboard and most rule checks read bar level state after the tick level check already ran underneath.
+
+14. SESSION CALENDAR PER INSTRUMENT
+
+14.1 Forex Session Structure
+Forex trades from Sunday 5pm Eastern Time through Friday 5pm Eastern Time, closed on weekends. Four regional sessions drive liquidity: Sydney (5pm to 2am Eastern), Tokyo (7pm to 4am Eastern), London (3am to 12pm Eastern), and New York (8am to 5pm Eastern). The London and New York overlap, 8am to 12pm Eastern, carries the deepest liquidity and the tightest spread of the trading day.
+
+Daily reset time for the rules engine: 5pm Eastern, matching the standard forex broker rollover convention.
+
+Per pair notes:
+- EUR/USD: peak liquidity during the London and New York overlap, tightest baseline spread of the seven pairs, liquidity stays strong through most of the trading week.
+- USD/JPY: peak liquidity during the Tokyo session and again during the London and New York overlap, spread widens noticeably during the gap between Tokyo close and London open.
+- GBP/USD: peak liquidity during the London session, spread widens outside London and New York hours.
+- USD/CHF: peak liquidity during the London and New York overlap, thinner baseline liquidity than EUR/USD, wider baseline spread as a result.
+- AUD/USD: peak liquidity during the Sydney and Tokyo session, which falls in the evening and overnight Eastern hours, thinner during New York only hours.
+- USD/CAD: peak liquidity during the New York session, tied closely to North American trading hours and oil price flows given Canada's export exposure.
+- NZD/USD: peak liquidity during the Sydney session, the thinnest of the seven pairs, carrying the widest baseline spread.
+
+14.2 Futures Session Structure
+Every futures contract in your list trades close to twenty three hours a day on CME Globex, with a daily maintenance break around 5pm to 6pm Eastern. Weekly closure runs from Friday afternoon (close time varies slightly by product, generally near 5pm Eastern) through Sunday evening reopen, generally near 6pm Eastern.
+
+Per contract notes:
+- ES, NQ, YM: peak liquidity during the United States cash equity session, 9:30am to 4pm Eastern, noticeably thinner during the overnight Globex session.
+- CL: peak liquidity during the United States session, with a volatility spike around the weekly inventory report released Wednesday at 10:30am Eastern.
+- GC: peak liquidity during COMEX floor hours, roughly 8:20am to 1:30pm Eastern, overlapping the London gold market during the morning Eastern hours.
+- ZN: peak liquidity around scheduled United States economic data releases at 8:30am Eastern and around Treasury auction times, session runs heaviest from 8:20am to 3pm Eastern.
+- 6E: peak liquidity during the European morning session and the London and New York overlap, tracking spot EUR/USD behavior closely.
+
+14.3 Unified Daily Reset
+Use 5pm Eastern as the daily reset time across every instrument in version one, forex and futures alike. A single reset time keeps your rules engine simple. Revisit separate reset times per instrument later if calibration against real account data shows a meaningful difference in outcomes.
+
+15. CONTRACT SPECIFICATION TABLE
+
+Treat the figures below as representative starting values for your config file. Margin requirements shift with market volatility over time, so pull current numbers from the exchange contract specification pages before your final calibration run.
+
+15.1 Futures Contracts
+
+E-mini S&P 500 (ES)
+Tick size: 0.25 index points
+Tick value: 12.50 USD
+Point value: 50 USD per index point
+Typical margin: approximately 13,200 USD
+Typical spread: 1 tick
+
+E-mini Nasdaq 100 (NQ)
+Tick size: 0.25 index points
+Tick value: 5.00 USD
+Point value: 20 USD per index point
+Typical margin: approximately 18,700 USD
+Typical spread: 1 tick
+
+E-mini Dow (YM)
+Tick size: 1 point
+Tick value: 5.00 USD
+Point value: 5 USD per point
+Typical margin: approximately 8,800 USD
+Typical spread: 1 tick
+
+Crude Oil (CL)
+Tick size: 0.01 USD per barrel
+Tick value: 10.00 USD
+Contract size: 1,000 barrels
+Typical margin: approximately 6,500 USD
+Typical spread: 1 to 2 ticks
+
+Gold (GC)
+Tick size: 0.10 USD per troy ounce
+Tick value: 10.00 USD
+Contract size: 100 troy ounces
+Typical margin: approximately 9,900 USD
+Typical spread: 1 tick
+
+10 Year Treasury Note (ZN)
+Tick size: 1/64 of a point
+Tick value: 15.625 USD
+Contract size: 100,000 USD face value
+Typical margin: approximately 1,900 USD
+Typical spread: 1 tick
+
+Euro FX futures (6E)
+Tick size: 0.00005
+Tick value: 6.25 USD
+Contract size: 125,000 euros
+Typical margin: approximately 2,400 USD
+Typical spread: 1 tick
+
+15.2 Forex Pairs
+
+Standard lot size: 100,000 units. Mini lot: 10,000 units. Micro lot: 1,000 units.
+
+EUR/USD
+Pip size: 0.0001
+Pip value at standard lot: approximately 10 USD
+Typical spread at peak liquidity: 0.1 to 1 pip
+
+USD/JPY
+Pip size: 0.01
+Pip value at standard lot: recalculate against the live exchange rate, since JPY pip value moves with price rather than staying fixed
+Typical spread at peak liquidity: 0.1 to 1 pip
+
+GBP/USD
+Pip size: 0.0001
+Pip value at standard lot: approximately 10 USD
+Typical spread at peak liquidity: 0.5 to 1.5 pips
+
+USD/CHF
+Pip size: 0.0001
+Pip value at standard lot: recalculate against the live exchange rate, since USD sits as the base currency
+Typical spread at peak liquidity: 1 to 2 pips
+
+AUD/USD
+Pip size: 0.0001
+Pip value at standard lot: approximately 10 USD
+Typical spread at peak liquidity: 0.5 to 1.5 pips
+
+USD/CAD
+Pip size: 0.0001
+Pip value at standard lot: recalculate against the live exchange rate, since USD sits as the base currency
+Typical spread at peak liquidity: 1 to 2 pips
+
+NZD/USD
+Pip size: 0.0001
+Pip value at standard lot: approximately 10 USD
+Typical spread at peak liquidity: 1 to 2 pips
+
+Margin formula at 30 to 1 leverage, a common retail forex regulatory cap: margin equals notional position size divided by 30. Notional size equals lot size times the live exchange rate for pairs quoting USD as the counter currency, so recalculate margin per trade against the current price rather than storing a fixed margin figure.
+
+16. REPRODUCIBILITY, LEADERBOARD FORMULA, AND PROJECT SCAFFOLDING
+
+16.1 Reproducibility and Seeding
+Assign a fixed random seed to every training run and every evaluation run, and store the seed value alongside the run record in your database. Give each stochastic component its own seeded random generator instance, meaning your synthetic price generator, your slippage model, and any exploration randomness inside a reinforcement learning policy each draw from a separate seeded stream. Separate seeds stop a change in one component from shifting the output of another. Build a fixed set of about twenty seeds representing twenty distinct market condition draws, and run every agent through the same twenty seeds, so your leaderboard compares agents against identical conditions.
+
+16.2 Leaderboard Metric Formula
+Use the Sortino ratio for your leaderboard rather than the Sharpe ratio, since a prop firm style evaluation cares about downside risk specifically, not overall volatility. Take the mean of daily returns across the evaluation period, divide by the downside deviation, meaning the standard deviation calculated using only the days with a negative return, then scale the result by the square root of 252, a standard reference figure for trading days in a year. Break ties between two agents with a similar Sortino ratio using maximum drawdown as the second sort key, favoring the smaller drawdown. Lock this formula before training starts, since a formula change after training begins means retraining every agent affected by the change.
+
+16.3 Project Scaffolding
+Use a plain Python virtual environment with a requirements.txt file rather than Poetry. A personal project at this scale gains little from Poetry's dependency resolution machinery, and a virtual environment plus requirements.txt stays simple to read and simple to recreate on a new machine.
+
+Use pnpm rather than npm for your Node dashboard. pnpm installs faster and stores packages once on disk instead of duplicating them per project, which pays off once your dashboard grows past a handful of packages.
+
+Keep SQLite as the single shared source of truth between your Python engine and your Node dashboard. Your Python engine writes every trade, account update, and rule check directly to the SQLite file. Your Node and Express backend reads the same file through a Node SQLite driver, and polls for new rows on a short interval, a quarter second to one second, forwarding new rows to the browser over your WebSocket connection. This design avoids adding a message queue or a second API layer, since SQLite already handles the handoff between your two languages.
+
+Folder structure for the whole project:
+
+propfirm-sim/
+  engine/
+    matching.py
+    rules.py
+    ledger.py
+    synthetic.py
+    calibration.py
+  agents/
+    rl_env.py
+    llm_tools.py
+  config/
+    contracts.yaml
+    sessions.yaml
+  data/
+    raw/
+    calibrated/
+  db/
+    propfirm.sqlite
+  dashboard/
+    server/
+    client/
+  scripts/
+    download_data.py
+    run_training.py
+
+Put your contract specification table from section 15 directly into contracts.yaml, and your session calendar from section 14 into sessions.yaml, so both feed your engine as configuration files rather than hardcoded values scattered across your codebase.
+
+17. REMAINING DESIGN DECISIONS
+
+17.1 Order Types Supported
+Version one supports four order types: market order, limit order, stop order, and stop-limit order.
+
+TODO, later version: add trailing stop. This order type needs the tick level engine to track a moving reference price on every tick, and building this addition after your core order handling passes testing costs far less than building everything together at once.
+
+17.2 Position Size and Leverage Limits
+Forex: cap each position at one standard lot, 100,000 units, per instrument per account during phase one and phase two. Raise this cap once you build a scaling plan for funded accounts.
+
+Futures: cap each position at 2 contracts per instrument per account during phase one and phase two. Futures carry higher notional exposure per contract than a single forex lot, so a lower contract count keeps risk in line with the forex cap.
+
+Account level cap: total open notional exposure across every open position stays under 5 times account equity. This stops an agent from stacking many small positions into one large combined risk.
+
+17.3 Reward Weighting
+Scale the per step risk adjusted reward to a small range, negative one to positive one per step, so this signal shapes behavior without taking over the total reward across an episode.
+
+Set the phase completion reward at positive 100 for passing a phase, and negative 100 for a rule violation that fails the account. This size gap keeps the phase outcome as the dominant signal your agent optimizes toward, with the per step reward working as a secondary shaping signal between milestones.
+
+17.4 SQLite Schema
+Table definitions for your db/propfirm.sqlite file:
+
+CREATE TABLE accounts (
+  account_id INTEGER PRIMARY KEY,
+  agent_id INTEGER NOT NULL,
+  phase TEXT NOT NULL,
+  starting_balance REAL NOT NULL,
+  current_balance REAL NOT NULL,
+  current_equity REAL NOT NULL,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  phase_started_at TEXT NOT NULL
+);
+
+CREATE TABLE trades (
+  trade_id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL,
+  instrument TEXT NOT NULL,
+  side TEXT NOT NULL,
+  size REAL NOT NULL,
+  entry_price REAL NOT NULL,
+  exit_price REAL,
+  entry_time TEXT NOT NULL,
+  exit_time TEXT,
+  stop_loss REAL,
+  take_profit REAL,
+  commission REAL NOT NULL,
+  swap REAL NOT NULL,
+  realized_pnl REAL,
+  FOREIGN KEY (account_id) REFERENCES accounts(account_id)
+);
+
+CREATE TABLE rule_violations (
+  violation_id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL,
+  rule_name TEXT NOT NULL,
+  triggered_at TEXT NOT NULL,
+  details TEXT,
+  FOREIGN KEY (account_id) REFERENCES accounts(account_id)
+);
+
+CREATE TABLE equity_snapshots (
+  snapshot_id INTEGER PRIMARY KEY,
+  account_id INTEGER NOT NULL,
+  timestamp TEXT NOT NULL,
+  equity REAL NOT NULL,
+  balance REAL NOT NULL,
+  FOREIGN KEY (account_id) REFERENCES accounts(account_id)
+);
+
+CREATE TABLE agents (
+  agent_id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  framework_type TEXT NOT NULL,
+  notes TEXT
+);
+
+17.5 Config File Skeletons
+
+contracts.yaml, one entry per instrument, following the values from section 15:
+
+ES:
+  type: future
+  tick_size: 0.25
+  tick_value: 12.50
+  point_value: 50
+  margin: 13200
+  spread_ticks: 1
+
+EUR_USD:
+  type: forex
+  pip_size: 0.0001
+  lot_size: 100000
+  pip_value: 10
+  spread_pips_peak: 0.5
+  leverage: 30
+
+sessions.yaml, one entry per instrument, following section 14:
+
+EUR_USD:
+  sessions:
+    - name: sydney
+      start_et: "17:00"
+      end_et: "02:00"
+    - name: tokyo
+      start_et: "19:00"
+      end_et: "04:00"
+    - name: london
+      start_et: "03:00"
+      end_et: "12:00"
+    - name: new_york
+      start_et: "08:00"
+      end_et: "17:00"
+  daily_reset_et: "17:00"
+  weekend_close_et: "17:00"
+  weekend_close_day: friday
+  weekend_open_et: "17:00"
+  weekend_open_day: sunday
+
+Repeat this structure for every forex pair and every futures contract in section 3.7, adjusting session windows and reset times to match section 14.
+
+18. BUILD ROADMAP
+
+Weeks 1 to 2: Matching engine with spread, slippage, commission, and margin modeling, SQLite ledger, and a basic rule set (daily loss, max drawdown), built against the contract specification and session calendar config files.
+
+Weeks 3 to 4: Full rule catalog, phase progression (challenge, verification, funded), and historical data replay using Dukascopy forex data and Databento futures data.
+
+Weeks 5 to 6: Both agent interfaces built together, a Gymnasium style step and reset function for reinforcement learning agents and a tool calling function set for LLM agents, plus a React and Express dashboard with live updates over WebSocket.
+
+Weeks 7 to 8: Synthetic generator with GARCH volatility, Markov regime switching, and jump events, calibrated against your historical data.
+
+Weeks 9 and beyond: Train reinforcement learning agents with the combined risk adjusted and phase completion reward, run LLM agents through the same challenges, and compare results on a shared leaderboard using your fixed seed set and Sortino ratio formula.
+
+19. FIRST DAY SETUP STEPS
+
+Run these commands in order to get a working skeleton before you write any engine logic.
+
+Folder structure:
+mkdir propfirm-sim && cd propfirm-sim
+mkdir -p engine agents config data/raw data/calibrated db dashboard/server dashboard/client scripts
+
+Python environment:
+python3 -m venv venv
+source venv/bin/activate
+pip install pandas numpy arch statsmodels pyarrow duckdb
+
+Database:
+Save the schema from section 17.4 as schema.sql in your db folder, then run:
+sqlite3 db/propfirm.sqlite < db/schema.sql
+
+Node and dashboard:
+cd dashboard/server
+pnpm init
+pnpm add express better-sqlite3 ws
+cd ../client
+pnpm create vite@latest . -- --template react
+pnpm install
+cd ../..
+
+Config files:
+Write config/contracts.yaml and config/sessions.yaml using the skeletons in section 17.5, filled out for every instrument listed in section 3.7.
+
+Build order for day one, after setup finishes:
+1. Write the account ledger functions first: open account, record trade, update balance and equity. Test these against your schema before touching the matching engine.
+2. Build a minimal matching engine handling market orders only, fixed spread, instant fill. This gets a full loop running, open account, place trade, close trade, see equity update, before you add any realism.
+3. Add the daily loss and max drawdown rule checks against this minimal loop. Build a hand crafted test account that should fail and one that should pass, and confirm both work correctly.
+4. Only after this loop runs end to end, layer in spread and slippage modeling, tick level processing, and the remaining order types from section 17.1.
+
+20. LATER TODO ITEMS
+
+Track deferred work here so nothing gets lost once you move past version one.
+
+TODO: add trailing stop order type, once market, limit, stop, and stop-limit orders pass testing.
+
+TODO: add per instrument daily reset times, if calibration against real account behavior shows a meaningful difference from the unified 5pm Eastern reset used in version one.
+
+TODO: raise position size caps for funded accounts, once you define a scaling plan.
+
+21. SUMMARY
+
+You build this whole system for free. Six parts do the work: a market data source, a matching engine, an account ledger, a rules engine, an agent interface, and a dashboard. Python, SQLite, DuckDB, arch, and statsmodels handle the simulation and synthetic data side. Node, Express, React, and WebSocket handle the dashboard, self hosted on your own machine. A one minute agent cadence sitting on top of a tick accurate engine, a full session calendar, and a calibrated contract specification table give your reinforcement learning agents and LLM agents a forex and futures environment close to the real thing, without a single paid service.
