@@ -23,15 +23,15 @@ chmod +x scripts/run_tests.sh
 ## Running the Dashboard
 
 ```
-cd dashboard/server
-pnpm start
+chmod +x scripts/run_dashboard.sh
+./scripts/run_dashboard.sh
 ```
 
-Open a second terminal for the client.
+Starts the server and client together; Ctrl+C stops both. To run them separately instead:
 
 ```
-cd dashboard/client
-pnpm run dev
+cd dashboard/server && pnpm start
+cd dashboard/client && pnpm run dev
 ```
 
 ## Project Documentation

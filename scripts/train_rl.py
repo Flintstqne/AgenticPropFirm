@@ -26,9 +26,19 @@ trading, nowhere near enough to shape a policy that reliably clears an 8%
 target. Raise --timesteps for a real run (see AGENTS.md for the fps-based
 time estimate).
 
+Three full 500k-step runs converged to a policy that opened positions but
+never closed them, tracing to a state-independent categorical collapse
+(one action dominant everywhere, not learned per-state), not a reward bug
+-- see AGENTS.md. Blind reward retuning already failed three times, so
+--warm-start-episodes behavior-clones the policy against a simple
+momentum rule before RL fine-tuning begins, so training starts from a
+state-differentiated policy instead of a random init prone to collapsing
+onto one action before it ever sees enough experience to differentiate.
+
 Usage:
   venv/bin/python scripts/train_rl.py EUR_USD --timesteps 20000
   venv/bin/python scripts/train_rl.py EUR_USD --timesteps 500000 --evaluate
+  venv/bin/python scripts/train_rl.py EUR_USD --timesteps 500000 --warm-start-episodes 30
 """
 
 import argparse
@@ -38,6 +48,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from stable_baselines3 import PPO                       # noqa: E402
@@ -45,7 +57,7 @@ from stable_baselines3.common.callbacks import BaseCallback  # noqa: E402
 from stable_baselines3.common.monitor import Monitor     # noqa: E402
 from stable_baselines3.common.utils import safe_mean     # noqa: E402
 
-from agents.rl_env import FlattenedActionEnv, PropFirmEnv  # noqa: E402
+from agents.rl_env import BUY, CLOSE, HOLD, SELL, FlattenedActionEnv, PropFirmEnv  # noqa: E402
 from engine import calibration, ledger, synthetic          # noqa: E402
 from engine.config import load_contracts                   # noqa: E402
 from engine.simulator import Simulator                     # noqa: E402
@@ -142,6 +154,73 @@ class TrainingProgressCallback(BaseCallback):
         self.db_conn.commit()
 
 
+def collect_demonstrations(env, episodes, ma_window=20):
+    """Run a simple rule-based trader through env, recording (observation,
+    action) pairs in FlattenedActionEnv's own MultiDiscrete action space, for
+    behavior-cloning pretraining. Operates directly on the vector
+    observation (index 0 is the single instrument's mid price, index 1 is
+    position) rather than through LLMToolbox, since BC needs actions in the
+    exact encoding PPO will fine-tune, not tool calls.
+
+    The rule itself is not the point -- it only has to be state-dependent
+    (trades on real price/position signal) so the policy starts pretrained
+    against *something* that varies by input, rather than random init that
+    is free to collapse onto one output regardless of state.
+    """
+    observations, actions = [], []
+    for _ in range(episodes):
+        obs, _ = env.reset()
+        window = []
+        terminated = truncated = False
+        while not (terminated or truncated):
+            mid, pos = obs[0], obs[1]
+            window.append(mid)
+            window = window[-ma_window:]
+            if len(window) < ma_window:
+                pick, size_bin = HOLD, 0
+            else:
+                ma = sum(window) / len(window)
+                if pos == 0 and mid > ma:
+                    pick, size_bin = BUY, 2
+                elif pos == 0 and mid < ma:
+                    pick, size_bin = SELL, 2
+                elif pos != 0 and (mid < ma if pos > 0 else mid > ma):
+                    pick, size_bin = CLOSE, 0
+                else:
+                    pick, size_bin = HOLD, 0
+            action = np.array([pick, size_bin])
+            observations.append(obs)
+            actions.append(action)
+            obs, _, terminated, truncated, _ = env.step(action)
+    return np.array(observations, dtype=np.float32), np.array(actions, dtype=np.int64)
+
+
+def behavior_clone(model, observations, actions, epochs=5, batch_size=64):
+    """Pretrain model.policy via supervised negative log-likelihood against
+    demonstrated actions, using SB3's own evaluate_actions so the same
+    MultiCategorical distribution PPO trains against is what gets fit here
+    -- no separate classifier head to keep in sync."""
+    import torch
+
+    device = model.device
+    obs_t = torch.as_tensor(observations, device=device)
+    act_t = torch.as_tensor(actions, device=device)
+    optimizer = torch.optim.Adam(model.policy.parameters(), lr=1e-3)
+    n = len(obs_t)
+    for epoch in range(epochs):
+        perm = torch.randperm(n)
+        total_loss = 0.0
+        for i in range(0, n, batch_size):
+            idx = perm[i:i + batch_size]
+            _, log_prob, _ = model.policy.evaluate_actions(obs_t[idx], act_t[idx])
+            loss = -log_prob.mean()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item() * len(idx)
+        print(f"  BC epoch {epoch + 1}/{epochs}  loss={total_loss / n:.4f}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("instrument")
@@ -150,6 +229,9 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--evaluate", action="store_true",
                     help="run one episode with the trained policy and print the outcome")
+    ap.add_argument("--warm-start-episodes", type=int, default=0,
+                    help="behavior-clone against a momentum rule for this many "
+                         "episodes before RL fine-tuning (0 disables)")
     args = ap.parse_args()
 
     env = Monitor(FlattenedActionEnv(PropFirmEnv(
@@ -180,6 +262,13 @@ def main():
     # action distribution off HOLD in a short experiment, though the
     # deterministic policy took longer to follow -- still tuning.
     model = PPO("MlpPolicy", env, verbose=1, seed=args.seed, device="cpu", ent_coef=0.05)
+
+    if args.warm_start_episodes:
+        print(f"collecting {args.warm_start_episodes} demonstration episodes...")
+        demo_obs, demo_act = collect_demonstrations(env, args.warm_start_episodes)
+        print(f"behavior-cloning against {len(demo_obs)} demonstrated steps...")
+        behavior_clone(model, demo_obs, demo_act)
+
     model.learn(total_timesteps=args.timesteps,
                callback=TrainingProgressCallback(db_conn, training_run_id))
 

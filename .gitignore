@@ -12,3 +12,5 @@ __pycache__/
 .pytest_cache/
 .claude/
 models/
+AGENTS.md
+CLAUDE.md
