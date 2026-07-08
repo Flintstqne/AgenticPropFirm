@@ -8,9 +8,16 @@ SCHEMA_PATH = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
 
 
 def connect(db_path):
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL mode lets the Node dashboard server read the file concurrently
+    # with this process writing to it, without either side blocking the
+    # other. Ignored (harmlessly) for :memory: connections. The setting is
+    # stored in the database file itself, so it applies to every future
+    # connection, Python or Node, once set here.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -63,17 +70,23 @@ def set_account_phase(conn, account_id, phase, now):
 
 def record_trade_open(conn, account_id, instrument, side, size, entry_price,
                       entry_time, stop_loss=None, take_profit=None,
-                      commission=0.0, swap=0.0):
+                      commission=0.0, swap=0.0, trailing_stop=None):
     cur = conn.execute(
         """INSERT INTO trades
            (account_id, instrument, side, size, entry_price, entry_time,
-            stop_loss, take_profit, commission, swap)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            stop_loss, take_profit, commission, swap, trailing_stop)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (account_id, instrument, side, size, entry_price, entry_time,
-         stop_loss, take_profit, commission, swap),
+         stop_loss, take_profit, commission, swap, trailing_stop),
     )
     conn.commit()
     return cur.lastrowid
+
+
+def update_stop_loss(conn, trade_id, stop_loss):
+    conn.execute("UPDATE trades SET stop_loss = ? WHERE trade_id = ?",
+                 (stop_loss, trade_id))
+    conn.commit()
 
 
 def record_trade_close(conn, trade_id, exit_price, exit_time, realized_pnl,

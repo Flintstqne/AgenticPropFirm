@@ -40,3 +40,35 @@ def test_same_seed_same_market_data(conn, tmp_path):
     b2 = conn.execute(
         "SELECT current_balance FROM accounts WHERE account_id = 2").fetchone()[0]
     assert b1 == pytest.approx(b2)  # identical draw + deterministic policy
+
+
+def test_ppo_policy_drives_a_full_run(conn, tmp_path):
+    """A trained checkpoint plugs into the same seeded harness as the
+    baselines: decode through the exact functions FlattenedActionEnv used
+    during training, drive the sim via LLMToolbox, land a runs row."""
+    from stable_baselines3 import PPO
+    from agents.rl_env import FlattenedActionEnv, PropFirmEnv
+    from tests.test_simulator import T0, START, flat_ticks, write_ticks
+
+    write_ticks(tmp_path, "EUR_USD", flat_ticks(1.1000, 40))
+
+    def build():
+        c = ledger.connect(":memory:")
+        ledger.init_db(c)
+        agent = ledger.register_agent(c, "t", "test")
+        acct = ledger.open_account(c, agent, "challenge", START, T0.isoformat())
+        from engine.simulator import Simulator
+        return c, acct, Simulator(c, acct, ["EUR_USD"], data_dir=tmp_path)
+
+    env = FlattenedActionEnv(PropFirmEnv(build))
+    model = PPO("MlpPolicy", env, n_steps=32, batch_size=16, n_epochs=1,
+               verbose=0, device="cpu")
+    model.learn(total_timesteps=32)
+    model_path = tmp_path / "model.zip"
+    model.save(model_path)
+
+    status = run_one(conn, "ppo", "EUR_USD", days=1, seed=SEEDS[0],
+                     data_dir=tmp_path, model_path=str(model_path))
+    row = conn.execute("SELECT * FROM runs").fetchone()
+    assert row["final_status"] == status
+    assert status in ("active", "failed", "passed")

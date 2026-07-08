@@ -2,6 +2,8 @@ venv/
 node_modules/
 dashboard/client/dist/
 db/propfirm.sqlite
+db/propfirm.sqlite-shm
+db/propfirm.sqlite-wal
 data/raw/
 data/calibrated/
 .env
@@ -9,3 +11,4 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .claude/
+models/

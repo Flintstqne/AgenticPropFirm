@@ -46,6 +46,33 @@ export function EquityCurve({ points, target, floor, height = 260 }) {
   );
 }
 
+export function MetricLine({ points, xKey, yKey, height = 200, label }) {
+  if (!points || points.length < 2)
+    return <div className="empty">No metrics logged yet</div>;
+  const w = 1000;
+  const xs = points.map((p) => p[xKey]);
+  const ys = points.map((p) => p[yKey]).filter((v) => v != null);
+  if (ys.length < 2) return <div className="empty">No metrics logged yet</div>;
+  const xMax = Math.max(...xs) || 1;
+  const yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const span = yMax - yMin || 1;
+  const y = (v) => height - ((v - yMin) / span) * (height - 20) - 10;
+  const pts = points
+    .filter((p) => p[yKey] != null)
+    .map((p) => `${(p[xKey] / xMax) * w},${y(p[yKey])}`)
+    .join(" ");
+  return (
+    <div>
+      <div className="caption">{label}</div>
+      <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`}
+        preserveAspectRatio="none" style={{ marginTop: 4 }}>
+        <line x1="0" y1={height - 1} x2={w} y2={height - 1} stroke="#272C33" strokeWidth="1" />
+        <polyline points={pts} fill="none" stroke="#ECEEF0" strokeWidth="1.5" />
+      </svg>
+    </div>
+  );
+}
+
 export function LimitGauge({ used, label }) {
   const pct = Math.min(100, Math.max(0, used * 100));
   const color = pct >= 100 ? "#D64545" : pct >= 70 ? "#D4972B" : "#35B075";

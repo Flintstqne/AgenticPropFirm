@@ -5,9 +5,15 @@ LZMA-compressed records of (ms_offset, ask, bid, ask_vol, bid_vol).
 
 Futures: Databento, free usage credits, needs DATABENTO_API_KEY in .env.
 
+Fallback: Yahoo 1-minute bars (secondary source per AGENTS.md), one tick
+per minute close with the config base spread, when the Dukascopy CDN is
+unreachable. Good enough for calibration (which fits minute returns);
+replay realism prefers real Dukascopy ticks.
+
 Usage:
   venv/bin/python scripts/download_data.py forex EUR_USD 2025-01-06 2025-01-10
   venv/bin/python scripts/download_data.py futures ES 2025-01-06 2025-01-10
+  venv/bin/python scripts/download_data.py yahoo EUR_USD   # last ~7 days, 1m
 """
 
 import lzma
@@ -111,6 +117,40 @@ def download_futures(instrument, start, end):
         write_day(instrument, day, ticks)
 
 
+YAHOO_SYMBOLS = {"ES": "ES=F", "NQ": "NQ=F", "YM": "YM=F", "CL": "CL=F",
+                 "GC": "GC=F", "ZN": "ZN=F", "6E": "6E=F"}
+
+
+def download_yahoo(instrument):
+    """Last ~7 days of 1-minute closes as one synthetic tick per minute.
+    Spread comes from config; bid/ask are close -/+ half the base spread."""
+    import json
+    spec = load_contracts()[instrument]
+    if spec["type"] == "forex":
+        symbol = instrument.replace("_", "") + "=X"
+        half = spec["spread_pips_peak"] * spec["pip_size"] / 2
+    else:
+        symbol = YAHOO_SYMBOLS[instrument]
+        half = spec["spread_ticks"] * spec["tick_size"] / 2
+    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+           f"?interval=1m&range=7d")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.load(resp)
+    result = data["chart"]["result"][0]
+    stamps = result["timestamp"]
+    closes = result["indicators"]["quote"][0]["close"]
+    by_day = {}
+    for t, c in zip(stamps, closes):
+        if c is None:
+            continue
+        ts = datetime.fromtimestamp(t, tz=timezone.utc)
+        by_day.setdefault(ts.date(), []).append(
+            (ts, c - half, c + half, 1.0, 1.0))
+    for day, ticks in sorted(by_day.items()):
+        write_day(instrument, day, ticks)
+
+
 def _read_env_key(name):
     env = Path(__file__).resolve().parent.parent / ".env"
     for line in env.read_text().splitlines():
@@ -121,8 +161,11 @@ def _read_env_key(name):
 
 if __name__ == "__main__":
     kind, instrument = sys.argv[1], sys.argv[2]
-    start, end = date.fromisoformat(sys.argv[3]), date.fromisoformat(sys.argv[4])
-    if kind == "forex":
-        download_forex(instrument, start, end)
+    if kind == "yahoo":
+        download_yahoo(instrument)
     else:
-        download_futures(instrument, start, end)
+        start, end = date.fromisoformat(sys.argv[3]), date.fromisoformat(sys.argv[4])
+        if kind == "forex":
+            download_forex(instrument, start, end)
+        else:
+            download_futures(instrument, start, end)

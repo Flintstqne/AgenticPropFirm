@@ -49,7 +49,9 @@ def generate_minutes(params, start_price, n_minutes, seed):
     rng_trend = random.Random(seed + 3)
 
     omega, alpha, beta = params["omega"], params["alpha"], params["beta"]
-    var = omega / max(1e-12, 1 - alpha - beta)  # unconditional variance
+    # start at the calibrated sample variance when available; the closed-form
+    # unconditional variance blows up as alpha+beta approaches 1
+    var = params.get("uncond_var") or omega / max(1e-6, 1 - alpha - beta)
     regime = RANGING
     trend_dir = 1.0
     logp = math.log(start_price)
@@ -78,8 +80,11 @@ def generate_minutes(params, start_price, n_minutes, seed):
         if rng_jump.random() < params["jump_prob"]:
             jump = rng_jump.gauss(0, params["jump_scale"] * sigma)
 
-        last_ret = drift + shock + jump
-        logp += last_ret
+        # only the diffusion shock feeds the GARCH recursion: a jump passing
+        # through alpha would persist via beta and inflate variance for many
+        # minutes, which real jump-diffusion behavior does not show
+        last_ret = shock
+        logp += drift + shock + jump
         anchor = 0.995 * anchor + 0.005 * logp  # slow-moving mean
         prices.append(math.exp(logp))
         regimes.append(regime)

@@ -16,6 +16,11 @@ const PORT = process.env.PORT || 3001;
 const POLL_MS = 500;
 
 const db = new DatabaseSync(DB_PATH, { readOnly: true });
+// WAL mode (set from the Python side, engine/ledger.py connect()) lets this
+// read-only connection coexist with the training/simulation writer without
+// blocking. busy_timeout is cheap insurance against the rare remaining
+// lock window rather than throwing immediately.
+db.exec("PRAGMA busy_timeout = 5000");
 const app = express();
 
 app.get("/api/accounts", (_req, res) => {
@@ -90,6 +95,21 @@ app.get("/api/leaderboard", (_req, res) => {
   res.json(rows.map((r, i) => ({ rank: i + 1, ...r, sortino: Number.isFinite(r.sortino) ? r.sortino : null })));
 });
 
+app.get("/api/training-runs", (_req, res) => {
+  res.json(db.prepare(
+    "SELECT * FROM training_runs ORDER BY training_run_id DESC").all());
+});
+
+app.get("/api/training-runs/:id", (req, res) => {
+  const run = db.prepare(
+    "SELECT * FROM training_runs WHERE training_run_id = ?").get(req.params.id);
+  if (!run) return res.status(404).json({ error: "no such training run" });
+  const metrics = db.prepare(
+    "SELECT * FROM training_metrics WHERE training_run_id = ? ORDER BY timesteps"
+  ).all(req.params.id);
+  res.json({ run, metrics });
+});
+
 app.get("/api/phases", (_req, res) => {
   res.json(yaml.load(fs.readFileSync(path.join(ROOT, "config", "phases.yaml"), "utf8")));
 });
@@ -107,7 +127,9 @@ const cursors = {
   equity_snapshots: maxId("snapshot_id", "equity_snapshots"),
   trades: maxId("trade_id", "trades"),
   rule_violations: maxId("violation_id", "rule_violations"),
+  training_metrics: maxId("metric_id", "training_metrics"),
 };
+let lastTrainingRuns = "";
 
 function maxId(col, table) {
   return db.prepare(`SELECT COALESCE(MAX(${col}), 0) AS m FROM ${table}`).get().m;
@@ -119,12 +141,32 @@ function broadcast(msg) {
 }
 
 setInterval(() => {
-  const idCols = { equity_snapshots: "snapshot_id", trades: "trade_id", rule_violations: "violation_id" };
-  for (const [table, col] of Object.entries(idCols)) {
-    const rows = db.prepare(`SELECT * FROM ${table} WHERE ${col} > ? ORDER BY ${col}`).all(cursors[table]);
-    if (rows.length) {
-      cursors[table] = rows[rows.length - 1][col];
-      broadcast({ type: table, rows });
+  // busy_timeout handles the common case, but a poll tick failing must
+  // never take the whole server down: skip this tick and try again on the
+  // next one rather than letting an uncaught exception kill the process,
+  // which is exactly what happened here before this existed.
+  try {
+    const idCols = {
+      equity_snapshots: "snapshot_id", trades: "trade_id",
+      rule_violations: "violation_id", training_metrics: "metric_id",
+    };
+    for (const [table, col] of Object.entries(idCols)) {
+      const rows = db.prepare(`SELECT * FROM ${table} WHERE ${col} > ? ORDER BY ${col}`).all(cursors[table]);
+      if (rows.length) {
+        cursors[table] = rows[rows.length - 1][col];
+        broadcast({ type: table, rows });
+      }
     }
+
+    // training_runs mutates in place (status running -> finished), so it
+    // gets a full-table broadcast on change instead of an append-only cursor
+    const runs = db.prepare("SELECT * FROM training_runs ORDER BY training_run_id DESC").all();
+    const snapshot = JSON.stringify(runs);
+    if (snapshot !== lastTrainingRuns) {
+      lastTrainingRuns = snapshot;
+      broadcast({ type: "training_runs", rows: runs });
+    }
+  } catch (err) {
+    console.error("poll tick failed, will retry:", err.message);
   }
 }, POLL_MS);

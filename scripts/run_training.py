@@ -8,9 +8,15 @@ Baseline policies included so the harness runs end to end without an RL
 library. Plug a trained policy in by passing any callable with the same
 signature as the baselines: policy(obs, toolbox) -> None.
 
+A trained PPO checkpoint (scripts/train_rl.py) plugs in as a policy too,
+under the same act(obs, tools) signature, decoding through the same
+vector_observation / decode_multidiscrete_action helpers FlattenedActionEnv
+uses during training, so there is exactly one place that encoding lives.
+
 Usage:
   venv/bin/python scripts/run_training.py momentum EUR_USD 5      # 5 synthetic days per seed
   venv/bin/python scripts/run_training.py random EUR_USD 5
+  venv/bin/python scripts/run_training.py ppo EUR_USD 5 models/ppo_EUR_USD.zip
 """
 
 import random
@@ -21,6 +27,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.llm_tools import LLMToolbox               # noqa: E402
+from agents.rl_env import decode_multidiscrete_action, vector_observation  # noqa: E402
 from engine import calibration, ledger, synthetic     # noqa: E402
 from engine.config import load_contracts              # noqa: E402
 from engine.simulator import Simulator                # noqa: E402
@@ -83,17 +90,47 @@ def random_policy(state):
     return act
 
 
-POLICIES = {"momentum": momentum_policy, "random": random_policy}
+def ppo_policy(state):
+    """Drive a trained PPO checkpoint through the same act(obs, tools)
+    interface the baselines use. Deterministic: this is evaluation, not
+    exploration. Uses the exact encode/decode functions FlattenedActionEnv
+    used during training so the model sees what it was trained on."""
+    from stable_baselines3 import PPO
+    model = PPO.load(state["model_path"], device="cpu")
+
+    def act(obs, tools):
+        sim = tools.sim
+        vec = vector_observation(obs, sim, sim.conn, sim.account_id, sim.instruments)
+        action, _ = model.predict(vec, deterministic=True)
+        decoded = decode_multidiscrete_action(action, len(sim.instruments))
+        for i, inst in enumerate(sim.instruments):
+            pick, size = decoded["action"][i], decoded["size"][i]
+            if pick == 1:  # BUY
+                tools.place_order(inst, "buy", size)
+            elif pick == 2:  # SELL
+                tools.place_order(inst, "sell", size)
+            elif pick == 3:  # CLOSE
+                for t in obs["open_trades"]:
+                    if t["instrument"] == inst:
+                        tools.close_position(t["trade_id"])
+    return act
 
 
-def run_one(conn, policy_name, instrument, days, seed, data_dir):
+POLICIES = {"momentum": momentum_policy, "random": random_policy, "ppo": ppo_policy}
+
+
+def run_one(conn, policy_name, instrument, days, seed, data_dir, model_path=None):
     spec = load_contracts()[instrument]
     try:
         params = calibration.load_params(instrument, data_dir=data_dir)
     except FileNotFoundError:
         params = DEFAULT_PARAMS
-    out = Path(data_dir) / "calibrated" / f"seed_{seed}" / instrument
-    if not out.exists():
+    # days is part of the cache key: a leftover shorter (or longer) dataset
+    # from an earlier run at a different days value must not get silently
+    # reused, since that changes the evaluation window out from under a run
+    # without warning (see the identical fix in scripts/train_rl.py)
+    out = Path(data_dir) / "calibrated" / f"seed_{seed}_d{days}" / instrument
+    if not (out.exists() and len(list(out.glob("*.parquet"))) == days):
         start_ts = datetime(2026, 1, 5, tzinfo=timezone.utc)
         synthetic.generate_day_files(params, spec, _start_price(spec), start_ts,
                                      days, out, seed)
@@ -108,9 +145,9 @@ def run_one(conn, policy_name, instrument, days, seed, data_dir):
     run_id = cur.lastrowid
 
     sim = Simulator(conn, acct, [instrument],
-                    source=f"calibrated/seed_{seed}", data_dir=data_dir)
+                    source=f"calibrated/seed_{seed}_d{days}", data_dir=data_dir)
     tools = LLMToolbox(sim)
-    state = {"instrument": instrument, "seed": seed}
+    state = {"instrument": instrument, "seed": seed, "model_path": model_path}
     act = POLICIES[policy_name](state)
     obs = sim.step()
     while obs is not None:
@@ -121,7 +158,11 @@ def run_one(conn, policy_name, instrument, days, seed, data_dir):
     conn.execute("UPDATE runs SET finished_at = ?, final_status = ? WHERE run_id = ?",
                  (datetime.now(timezone.utc).isoformat(), sim.status, run_id))
     conn.commit()
-    print(f"seed {seed:>3}  {policy_name:<10} balance {final['current_balance']:>12.2f}  {sim.status}")
+    # equity, not balance: balance only reflects closed trades, so an
+    # account holding open positions at episode end (unrealized P&L) would
+    # otherwise print as an untouched flat 100000.00 despite real trading
+    # activity, per AGENTS.md the rules engine judges accounts on equity
+    print(f"seed {seed:>3}  {policy_name:<10} equity {final['current_equity']:>12.2f}  {sim.status}")
     return sim.status
 
 
@@ -131,10 +172,12 @@ def _start_price(spec):
 
 def main():
     policy_name, instrument, days = sys.argv[1], sys.argv[2], int(sys.argv[3])
+    model_path = sys.argv[4] if len(sys.argv) > 4 else f"models/ppo_{instrument}.zip"
     conn = ledger.connect(str(DB))
     conn.executescript((ROOT / "db" / "migrations" / "001_add_runs_table.sql").read_text())
     data_dir = ROOT / "data"
-    results = [run_one(conn, policy_name, instrument, days, s, data_dir) for s in SEEDS]
+    results = [run_one(conn, policy_name, instrument, days, s, data_dir, model_path)
+              for s in SEEDS]
     print(f"\n{results.count('passed')} passed, {results.count('failed')} failed, "
           f"{results.count('active')} still active at data end")
 

@@ -22,13 +22,16 @@ class LLMToolbox:
 
     def place_order(self, instrument, side, size, order_type="market",
                     limit_price=None, stop_price=None,
-                    stop_loss=None, take_profit=None):
+                    stop_loss=None, take_profit=None, trailing_stop=None):
         """Place an order. side: buy|sell. order_type: market|limit|stop|stop_limit.
-        Fills against ticks in the next simulated minute."""
+        trailing_stop is a price distance that follows the best price reached
+        since entry, tightening only, never loosening. Fills against ticks in
+        the next simulated minute."""
         order_id, err = self.sim.place_order(
             instrument, side, size, order_type,
             limit_price=limit_price, stop_price=stop_price,
-            stop_loss=stop_loss, take_profit=take_profit)
+            stop_loss=stop_loss, take_profit=take_profit,
+            trailing_stop=trailing_stop)
         if err:
             return {"ok": False, "error": err}
         return {"ok": True, "order_id": order_id}

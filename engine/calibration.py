@@ -47,28 +47,47 @@ def fit_garch(rets):
         warnings.simplefilter("ignore")
         res = arch_model(scaled, vol="GARCH", p=1, q=1, mean="Zero").fit(disp="off")
     omega = res.params["omega"] / RET_SCALE ** 2
-    return {
-        "omega": float(omega),
-        "alpha": float(res.params["alpha[1]"]),
-        "beta": float(res.params["beta[1]"]),
-    }
+    alpha, beta = float(res.params["alpha[1]"]), float(res.params["beta[1]"])
+    # real minute data often fits at alpha+beta ~ 1.0 (integrated GARCH),
+    # which makes simulated variance a random walk that can explode; cap
+    # persistence just under 1 so the process stays stationary
+    if alpha + beta > 0.995:
+        scale = 0.995 / (alpha + beta)
+        alpha, beta = alpha * scale, beta * scale
+    return {"omega": float(omega), "alpha": alpha, "beta": beta}
 
 
 def fit_regimes(rets):
     """Two-regime Markov switching on returns. The higher-|mean| regime is
-    the trending one; transition probabilities feed the generator chain."""
+    the trending one; transition probabilities feed the generator chain.
+
+    Real minute data carries flat stretches (repeated identical closes) and
+    weekend gaps that make the EM step degenerate, so exact-zero returns
+    drop out and outliers clip to 20 sigma before fitting. If the fit still
+    fails, fall back to persistent default regimes rather than dying."""
     import numpy as np
     from statsmodels.tsa.regime_switching.markov_regression import MarkovRegression
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        model = MarkovRegression(np.array(rets) * RET_SCALE, k_regimes=2,
-                                 switching_variance=True)
-        res = model.fit(search_reps=5)
+    x = np.array([r for r in rets if r != 0.0]) * RET_SCALE
+    sd = x.std() or 1.0
+    x = np.clip(x, -20 * sd, 20 * sd)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            model = MarkovRegression(x, k_regimes=2, switching_variance=True)
+            res = model.fit(search_reps=5)
+    except Exception:
+        return {"p_stay_trend": 0.98, "p_stay_range": 0.98,
+                "trend_mu": float(abs(x.mean()) / RET_SCALE)}
     p00 = float(res.params[0])      # P(0 -> 0)
     p11 = 1 - float(res.params[1])  # params[1] is P(1 -> 0)
     means = [float(res.params[2]) / RET_SCALE, float(res.params[3]) / RET_SCALE]
     trend_idx = 0 if abs(means[0]) >= abs(means[1]) else 1
-    stay = (p00, p11)
+    # a thin or noisy fit can land near 50/50 transitions, which whipsaws
+    # the regime chain every other minute in the generator and shows up as
+    # runaway kurtosis in the synthetic path; floor persistence at 0.6 so a
+    # weak fit still trends toward "not clearly regime-switching" rather
+    # than "switching constantly"
+    stay = (max(0.6, p00), max(0.6, p11))
     return {
         "p_stay_trend": stay[trend_idx],
         "p_stay_range": stay[1 - trend_idx],
@@ -76,11 +95,38 @@ def fit_regimes(rets):
     }
 
 
+def fit_kappa(rets):
+    """Mean-reversion pull per minute, estimated the same way the generator
+    applies it: deviation of log price from a slow EMA anchor (0.005 step),
+    kappa = -cov(next return, deviation) / var(deviation), clamped to a sane
+    band. Weak or trending data collapses toward zero pull."""
+    logp = 0.0
+    anchor = 0.0
+    devs, nexts = [], []
+    for r in rets:
+        devs.append(logp - anchor)
+        nexts.append(r)
+        logp += r
+        anchor = 0.995 * anchor + 0.005 * logp
+    n = len(devs)
+    mean_d = sum(devs) / n
+    mean_r = sum(nexts) / n
+    var_d = sum((d - mean_d) ** 2 for d in devs) / n
+    if var_d == 0:
+        return 0.05
+    cov = sum((d - mean_d) * (r - mean_r) for d, r in zip(devs, nexts)) / n
+    return min(0.5, max(0.0, -cov / var_d))
+
+
 def jump_stats(rets):
-    """Returns beyond 4 unconditional sigmas count as jumps."""
+    """Returns beyond 4 unconditional sigmas count as jumps. Clipped at 20
+    sigma first: session-boundary gap prints (futures maintenance breaks,
+    weekend opens) would otherwise inflate the jump size the generator
+    reproduces every simulated day."""
     n = len(rets)
     mean = sum(rets) / n
     sd = math.sqrt(sum((r - mean) ** 2 for r in rets) / n) or 1e-12
+    rets = [max(-20 * sd, min(20 * sd, r)) for r in rets]
     jumps = [r for r in rets if abs(r - mean) > 4 * sd]
     return {
         "jump_prob": len(jumps) / n,
@@ -88,14 +134,20 @@ def jump_stats(rets):
     }
 
 
-def calibrate(instrument, data_dir=None, revert_kappa=0.05):
-    """Full calibration for one instrument. revert_kappa has no direct
-    estimator here; 0.05 per minute is the starting default, tune per
-    instrument if synthetic paths range too loosely or too tightly."""
+def calibrate(instrument, data_dir=None):
+    """Full calibration for one instrument, every generator parameter
+    estimated from that instrument's own history."""
     rets, density = minute_returns(instrument, data_dir)
+    clean = [r for r in rets if abs(r) < 0.05]  # weekend gaps out
+    var = sum(r * r for r in clean) / len(clean)
     params = {"instrument": instrument, "n_minutes_fit": len(rets),
-              "revert_kappa": revert_kappa, "tick_density": density}
+              "revert_kappa": fit_kappa(rets), "tick_density": density,
+              "uncond_var": var}
     params.update(fit_garch(rets))
+    # anchor the long-run GARCH level to the sample variance: after the
+    # persistence cap, the fitted omega would otherwise set a steady state
+    # well above (or below) the real instrument's volatility
+    params["omega"] = var * (1 - params["alpha"] - params["beta"])
     params.update(fit_regimes(rets))
     params.update(jump_stats(rets))
     return params

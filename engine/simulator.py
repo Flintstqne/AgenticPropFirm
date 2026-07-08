@@ -73,7 +73,7 @@ class Simulator:
 
     def place_order(self, instrument, side, size, order_type="market",
                     limit_price=None, stop_price=None,
-                    stop_loss=None, take_profit=None):
+                    stop_loss=None, take_profit=None, trailing_stop=None):
         """Validate caps, then queue the order for the next minute's ticks.
         Returns (order_id, None) or (None, reason)."""
         spec = self.contracts[instrument]
@@ -94,7 +94,8 @@ class Simulator:
             "id": self._next_order_id, "instrument": instrument, "side": side,
             "size": size, "type": order_type, "limit_price": limit_price,
             "stop_price": stop_price, "stop_loss": stop_loss,
-            "take_profit": take_profit, "triggered": False,
+            "take_profit": take_profit, "trailing_stop": trailing_stop,
+            "triggered": False,
         }
         self._next_order_id += 1
         self.pending.append(order)
@@ -257,11 +258,18 @@ class Simulator:
                 still.append(o)
                 continue
             spec = self.contracts[inst]
+            stop_loss = o["stop_loss"]
+            if o["trailing_stop"] is not None:
+                # trailing stop starts pinned trailing_stop behind entry,
+                # same as a fixed stop until the first favorable tick moves it
+                stop_loss = (fill_price - o["trailing_stop"] if o["side"] == "buy"
+                            else fill_price + o["trailing_stop"])
             ledger.record_trade_open(
                 self.conn, self.account_id, inst, o["side"], o["size"],
                 fill_price, ts.isoformat(),
-                stop_loss=o["stop_loss"], take_profit=o["take_profit"],
-                commission=matching.commission_usd(spec, o["size"]))
+                stop_loss=stop_loss, take_profit=o["take_profit"],
+                commission=matching.commission_usd(spec, o["size"]),
+                trailing_stop=o["trailing_stop"])
             self.active_days.add(self.current_day_et)
         self.pending = still
 
@@ -309,6 +317,14 @@ class Simulator:
             long = trade["side"] == "buy"
             close_px = bid if long else ask  # side the position closes at
             sl, tp = trade["stop_loss"], trade["take_profit"]
+            if trade["trailing_stop"] is not None:
+                # tighten only: the stop follows the best price reached,
+                # never loosens back toward entry
+                trail = trade["trailing_stop"]
+                candidate = close_px - trail if long else close_px + trail
+                if sl is None or (candidate > sl if long else candidate < sl):
+                    sl = candidate
+                    ledger.update_stop_loss(self.conn, trade["trade_id"], sl)
             hit = (sl is not None and (close_px <= sl if long else close_px >= sl)) or \
                   (tp is not None and (close_px >= tp if long else close_px <= tp))
             if hit:

@@ -144,15 +144,43 @@ class TestWrappers:
         assert tools.get_account_state()["status"] == "active"
 
     def test_rl_env_step_and_reward_shape(self, env):
+        import numpy as np
         tmp, make = env
         write_ticks(tmp, "EUR_USD", flat_ticks(1.1000, 10))
         gym_env = PropFirmEnv(lambda: make())
         obs, _ = gym_env.reset()
-        assert obs.shape == (5,)
-        obs, reward, terminated, truncated, _ = gym_env.step(BUY)
+        assert obs.shape == (5,)  # 1 instrument: [mid, pos, equity, dist_daily, dist_dd]
+        hold = {"action": np.array([HOLD]), "size": np.array([0.0])}
+        buy = {"action": np.array([BUY]), "size": np.array([1.0])}
+        obs, reward, terminated, truncated, _ = gym_env.step(buy)
         assert -101 <= reward <= 101
         assert not truncated
         while not terminated:
-            obs, reward, terminated, _, _ = gym_env.step(HOLD)
+            obs, reward, terminated, _, _ = gym_env.step(hold)
         # data exhausted, account still active: no -100 slap
         assert reward > -100
+
+    def test_rl_env_multi_instrument_shapes(self, env):
+        import numpy as np
+        tmp, make = env
+        write_ticks(tmp, "EUR_USD", flat_ticks(1.1000, 6))
+        write_ticks(tmp, "ES", flat_ticks(5000.0, 6, spread=0.25))
+
+        def make_two():
+            conn = ledger.connect(":memory:")
+            ledger.init_db(conn)
+            agent = ledger.register_agent(conn, "t", "test")
+            acct = ledger.open_account(conn, agent, "challenge", START, T0.isoformat())
+            sim = Simulator(conn, acct, ["EUR_USD", "ES"], data_dir=tmp)
+            return conn, acct, sim
+
+        gym_env = PropFirmEnv(make_two)
+        obs, _ = gym_env.reset()
+        assert obs.shape == (7,)  # 2 * 2 instruments + 3 global
+        action = {"action": np.array([BUY, HOLD]), "size": np.array([0.5, 0.0])}
+        obs, reward, terminated, _, _ = gym_env.step(action)
+        assert obs.shape == (7,)
+        trades = ledger.get_open_trades(gym_env.conn, gym_env.account_id)
+        assert len(trades) == 1
+        assert trades[0]["instrument"] == "EUR_USD"
+        assert trades[0]["size"] == pytest.approx(0.5)  # 0.5 frac of 1-lot cap

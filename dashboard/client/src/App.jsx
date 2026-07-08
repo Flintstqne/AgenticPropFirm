@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { fmt, get, useLiveFeed, usePoll } from "./api.js";
 import SessionRail from "./SessionRail.jsx";
-import { EquityCurve, LimitGauge, Sparkline } from "./charts.jsx";
+import { EquityCurve, LimitGauge, MetricLine, Sparkline } from "./charts.jsx";
 
-const SCREENS = ["overview", "account", "trades", "leaderboard", "alerts"];
+const SCREENS = ["overview", "account", "trades", "leaderboard", "alerts", "training"];
 
 export default function App() {
   const [screen, setScreen] = useState("overview");
@@ -65,6 +65,7 @@ export default function App() {
           {screen === "trades" && <TradeLedger accounts={accounts} />}
           {screen === "leaderboard" && <Leaderboard />}
           {screen === "alerts" && <AlertLog violations={violations} phases={phases} />}
+          {screen === "training" && <Training />}
         </div>
       </div>
       <div className="alert-strip">
@@ -278,6 +279,93 @@ function AlertLog({ violations, phases }) {
           {violations.length === 0 && <tr><td colSpan={4} className="empty">No violations recorded</td></tr>}
         </tbody>
       </table>
+    </>
+  );
+}
+
+function Training() {
+  const [runs, setRuns] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [detail, setDetail] = useState(null);
+
+  useEffect(() => { get("/api/training-runs").then(setRuns); }, []);
+  useEffect(() => {
+    if (selected == null) return;
+    get(`/api/training-runs/${selected}`).then(setDetail);
+  }, [selected]);
+  useEffect(() => {
+    if (selected == null && runs.length) setSelected(runs[0].training_run_id);
+  }, [runs, selected]);
+
+  useLiveFeed({
+    training_runs: (rows) => setRuns(rows),
+    training_metrics: (rows) => {
+      if (selected == null) return;
+      const mine = rows.filter((r) => r.training_run_id === selected);
+      if (!mine.length) return;
+      setDetail((d) => d && { ...d, metrics: [...d.metrics, ...mine] });
+    },
+  });
+
+  const run = detail?.run;
+  const lastMetric = detail?.metrics?.[detail.metrics.length - 1];
+  const progressPct = run && lastMetric
+    ? Math.min(100, (lastMetric.timesteps / run.total_timesteps) * 100) : 0;
+
+  return (
+    <>
+      <h1 className="screen-title">Training</h1>
+      <div style={{ display: "flex", gap: 8, margin: "16px 0", flexWrap: "wrap" }}>
+        {runs.map((r) => (
+          <div key={r.training_run_id} tabIndex={0}
+            className="tag" style={{ cursor: "pointer", borderLeftColor: r.training_run_id === selected ? "#3E7CFF" : undefined }}
+            onClick={() => setSelected(r.training_run_id)}>
+            #{r.training_run_id} {r.instrument} {r.algo}
+          </div>
+        ))}
+        {runs.length === 0 && <div className="empty">No training runs yet — run scripts/train_rl.py</div>}
+      </div>
+
+      {run && (
+        <>
+          <div className="blocks">
+            <div className="panel block">
+              <div className="caption">Status</div>
+              <div className="hero-sm">
+                <span className={`tag ${run.status === "finished" ? "green" : "blue"}`}>{run.status}</span>
+              </div>
+            </div>
+            <div className="panel block">
+              <div className="caption">Timesteps</div>
+              <div className="hero-sm num">
+                {fmt(lastMetric?.timesteps ?? 0, 0)} / {fmt(run.total_timesteps, 0)}
+              </div>
+            </div>
+            <div className="panel block">
+              <div className="caption">Episode reward (mean)</div>
+              <div className="hero-sm num">{fmt(lastMetric?.ep_rew_mean, 2)}</div>
+            </div>
+            <div className="panel block">
+              <div className="caption">Throughput</div>
+              <div className="hero-sm num">{fmt(lastMetric?.fps, 0)} steps/s</div>
+            </div>
+          </div>
+          <div className="panel" style={{ padding: 16, marginBottom: 8 }}>
+            <div className="caption">Progress {progressPct.toFixed(0)}%</div>
+            <div className="gauge" style={{ marginTop: 4 }}>
+              <div style={{ width: `${progressPct}%`, background: "#3E7CFF" }} />
+            </div>
+          </div>
+          <div className="panel" style={{ padding: 16, marginBottom: 24 }}>
+            <MetricLine points={detail.metrics} xKey="timesteps" yKey="ep_rew_mean"
+              label="Mean episode reward vs. timesteps" />
+          </div>
+          <div className="panel" style={{ padding: 16 }}>
+            <MetricLine points={detail.metrics} xKey="timesteps" yKey="ep_len_mean"
+              label="Mean episode length vs. timesteps" />
+          </div>
+        </>
+      )}
     </>
   );
 }
